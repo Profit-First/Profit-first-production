@@ -1,39 +1,60 @@
+# Ingress - External access to frontend and backend
+# Routes traffic from internet to appropriate services based on domain
+
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: profit-first-ingress
   namespace: profit-first
+  
+  # Annotations configure ingress behavior
   annotations:
+    # Use Nginx ingress controller
     kubernetes.io/ingress.class: nginx
+    
+    # SSL/TLS certificate from Let's Encrypt (requires cert-manager)
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    
+    # Force HTTPS redirect
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # Maximum request body size (for file uploads)
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    
+    # Rate limiting (requests per second per IP)
     nginx.ingress.kubernetes.io/rate-limit: "100"
+
 spec:
+  # TLS/SSL configuration
   tls:
   - hosts:
-    - yourdomain.com
-    - api.yourdomain.com
-    secretName: profit-first-tls
+    - yourdomain.com        # UPDATE: Your frontend domain
+    - api.yourdomain.com    # UPDATE: Your backend API domain
+    secretName: profit-first-tls  # Secret containing TLS certificate
+  
+  # Routing rules
   rules:
-  - host: yourdomain.com
+  # Frontend routing - serve React app
+  - host: yourdomain.com    # UPDATE: Your frontend domain
     http:
       paths:
-      - path: /
+      - path: /             # All paths
         pathType: Prefix
         backend:
           service:
-            name: frontend
+            name: frontend  # Route to frontend service
             port:
               number: 80
-  - host: api.yourdomain.com
+  
+  # Backend API routing
+  - host: api.yourdomain.com  # UPDATE: Your API domain
     http:
       paths:
-      - path: /
+      - path: /               # All API paths
         pathType: Prefix
         backend:
           service:
-            name: backend
+            name: backend     # Route to backend service
             port:
               number: 3000

@@ -1,3 +1,6 @@
+# Frontend Deployment - React/Vite app served by Nginx
+# Manages the frontend application pods
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,39 +8,55 @@ metadata:
   namespace: profit-first
   labels:
     app: frontend
+
 spec:
+  # Number of frontend replicas
   replicas: 2
+  
   selector:
     matchLabels:
       app: frontend
+  
   template:
     metadata:
       labels:
         app: frontend
+    
     spec:
       containers:
       - name: frontend
+        # Docker image - UPDATE THIS with your actual registry and image
         image: your-registry/profit-first-frontend:latest
         imagePullPolicy: Always
+        
+        # Nginx listens on port 80
         ports:
         - containerPort: 80
           name: http
+        
+        # Environment variables from ConfigMap
         envFrom:
         - configMapRef:
             name: frontend-config
+        
+        # Resource limits (frontend needs less resources than backend)
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "128Mi"  # Minimum memory
+            cpu: "100m"      # Minimum CPU (0.1 cores)
           limits:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "256Mi"  # Maximum memory
+            cpu: "200m"      # Maximum CPU (0.2 cores)
+        
+        # Liveness probe - check if Nginx is responding
         livenessProbe:
           httpGet:
             path: /
             port: 80
           initialDelaySeconds: 30
           periodSeconds: 10
+        
+        # Readiness probe - check if ready to serve traffic
         readinessProbe:
           httpGet:
             path: /

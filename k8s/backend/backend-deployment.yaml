@@ -1,3 +1,6 @@
+# Backend Deployment - Node.js/Express API
+# Manages the backend application pods with auto-scaling and health checks
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,52 +8,74 @@ metadata:
   namespace: profit-first
   labels:
     app: backend
+
 spec:
+  # Number of pod replicas (can be scaled manually or by HPA)
   replicas: 2
+  
+  # Selector to match pods managed by this deployment
   selector:
     matchLabels:
       app: backend
+  
+  # Pod template
   template:
     metadata:
       labels:
         app: backend
+      # Annotations for Prometheus monitoring
       annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "3000"
-        prometheus.io/path: "/metrics"
+        prometheus.io/scrape: "true"    # Enable Prometheus scraping
+        prometheus.io/port: "3000"      # Port to scrape metrics from
+        prometheus.io/path: "/metrics"  # Metrics endpoint path
+    
     spec:
       containers:
       - name: backend
+        # Docker image - UPDATE THIS with your actual registry and image
         image: your-registry/profit-first-backend:latest
+        # Always pull latest image
         imagePullPolicy: Always
+        
+        # Container port
         ports:
         - containerPort: 3000
           name: http
+        
+        # Environment variables from ConfigMap and Secret
         envFrom:
         - configMapRef:
-            name: backend-config
+            name: backend-config  # Non-sensitive config
         - secretRef:
-            name: backend-secret
+            name: backend-secret  # Sensitive data (AWS credentials, etc.)
+        
+        # Resource limits and requests
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "256Mi"  # Minimum memory guaranteed
+            cpu: "200m"      # Minimum CPU guaranteed (0.2 cores)
           limits:
-            memory: "512Mi"
-            cpu: "500m"
+            memory: "512Mi"  # Maximum memory allowed
+            cpu: "500m"      # Maximum CPU allowed (0.5 cores)
+        
+        # Liveness probe - checks if container is alive
+        # If fails, Kubernetes will restart the container
         livenessProbe:
           httpGet:
             path: /health
             port: 3000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+          initialDelaySeconds: 30  # Wait 30s before first check
+          periodSeconds: 10        # Check every 10s
+          timeoutSeconds: 5        # Timeout after 5s
+          failureThreshold: 3      # Restart after 3 failures
+        
+        # Readiness probe - checks if container is ready to serve traffic
+        # If fails, pod is removed from service endpoints
         readinessProbe:
           httpGet:
             path: /health
             port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
+          initialDelaySeconds: 10  # Wait 10s before first check
+          periodSeconds: 5         # Check every 5s
+          timeoutSeconds: 3        # Timeout after 3s
+          failureThreshold: 3      # Mark unready after 3 failures

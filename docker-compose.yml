@@ -1,73 +1,78 @@
+# Docker Compose - Production Configuration
+# Run entire application stack with: docker-compose up -d
+
 services:
-  # Redis Cache Service
+  # Redis Cache Service - In-memory data store for caching
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine  # Lightweight Redis image
     container_name: profit-first-redis
-    restart: unless-stopped
+    restart: unless-stopped  # Auto-restart on failure
     ports:
-      - "6379:6379"
+      - "6379:6379"  # Expose Redis port
     volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
+      - redis_data:/data  # Persist Redis data
+    command: redis-server --appendonly yes  # Enable persistence
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "ping"]  # Check if Redis is responding
       interval: 10s
       timeout: 3s
       retries: 5
     networks:
       - profit-first-network
 
-  # Backend Service
+  # Backend Service - Node.js/Express API
   backend:
     build:
       context: ./Auth-service
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile  # Production Dockerfile
     container_name: profit-first-backend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:3000"  # Expose backend API
     env_file:
-      - ./Auth-service/.env
+      - ./Auth-service/.env  # Load environment variables from .env file
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://redis:6379  # Connect to Redis container
     depends_on:
       redis:
-        condition: service_healthy
+        condition: service_healthy  # Wait for Redis to be healthy
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 40s  # Give app 40s to start
     networks:
       - profit-first-network
 
-  # Frontend Service
+  # Frontend Service - React app served by Nginx
   frontend:
     build:
       context: ./frontend-profit-first/client
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile  # Production Dockerfile (multi-stage build)
       args:
-        - VITE_API_URL=http://localhost:3000
+        - VITE_API_URL=http://localhost:3000  # API URL for build
     container_name: profit-first-frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "80:80"  # Expose on port 80 (HTTP)
     environment:
-      - BACKEND_HOST=backend
+      - BACKEND_HOST=backend  # Backend container name
       - BACKEND_PORT=3000
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_healthy  # Wait for backend to be healthy
     networks:
       - profit-first-network
 
+# Network - Allows containers to communicate
 networks:
   profit-first-network:
     driver: bridge
 
+# Volumes - Persist data across container restarts
 volumes:
   redis_data:
     driver: local

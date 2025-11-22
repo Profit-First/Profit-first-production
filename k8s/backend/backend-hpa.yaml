@@ -1,25 +1,37 @@
+# Horizontal Pod Autoscaler for Backend
+# Automatically scales backend pods based on CPU and memory usage
+
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: backend-hpa
   namespace: profit-first
+
 spec:
+  # Target deployment to scale
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
     name: backend
-  minReplicas: 2
-  maxReplicas: 10
+  
+  # Scaling limits
+  minReplicas: 2   # Minimum number of pods (for high availability)
+  maxReplicas: 10  # Maximum number of pods (cost control)
+  
+  # Metrics to trigger scaling
   metrics:
+  # CPU-based scaling
   - type: Resource
     resource:
       name: cpu
       target:
         type: Utilization
-        averageUtilization: 70
+        averageUtilization: 70  # Scale up if CPU > 70%
+  
+  # Memory-based scaling
   - type: Resource
     resource:
       name: memory
       target:
         type: Utilization
-        averageUtilization: 80
+        averageUtilization: 80  # Scale up if memory > 80%

@@ -1,3 +1,6 @@
+# Redis Deployment - In-memory cache for backend
+# Provides fast caching to improve application performance
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,26 +8,38 @@ metadata:
   namespace: profit-first
   labels:
     app: redis
+
 spec:
+  # Single replica (for production, consider Redis Sentinel or Redis Cluster)
   replicas: 1
+  
   selector:
     matchLabels:
       app: redis
+  
   template:
     metadata:
       labels:
         app: redis
+    
     spec:
       containers:
       - name: redis
+        # Official Redis Alpine image (lightweight)
         image: redis:7-alpine
+        
+        # Redis default port
         ports:
         - containerPort: 6379
           name: redis
+        
+        # Redis command with persistence enabled
         command:
         - redis-server
-        - --appendonly
+        - --appendonly      # Enable AOF persistence
         - "yes"
+        
+        # Resource limits
         resources:
           requests:
             memory: "128Mi"
@@ -32,9 +47,13 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "200m"
+        
+        # Mount persistent volume for data
         volumeMounts:
         - name: redis-data
-          mountPath: /data
+          mountPath: /data  # Redis data directory
+        
+        # Liveness probe - check if Redis is responding
         livenessProbe:
           exec:
             command:
@@ -42,6 +61,8 @@ spec:
             - ping
           initialDelaySeconds: 30
           periodSeconds: 10
+        
+        # Readiness probe - check if ready to accept connections
         readinessProbe:
           exec:
             command:
@@ -49,7 +70,9 @@ spec:
             - ping
           initialDelaySeconds: 5
           periodSeconds: 5
+      
+      # Persistent volume for Redis data
       volumes:
       - name: redis-data
         persistentVolumeClaim:
-          claimName: redis-pvc
+          claimName: redis-pvc  # Reference to PVC
