@@ -1,0 +1,72 @@
+# Development Docker Compose - with hot reload
+services:
+  # Redis Cache Service
+  redis:
+    image: redis:7-alpine
+    container_name: profit-first-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - profit-first-network-dev
+
+  # Backend Service with hot reload
+  backend:
+    build:
+      context: ./Auth-service
+      dockerfile: Dockerfile.dev
+    container_name: profit-first-backend-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./Auth-service/.env
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./Auth-service:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+      - profit-first-network-dev
+
+  # Frontend Service with hot reload
+  frontend:
+    build:
+      context: ./frontend-profit-first/client
+      dockerfile: Dockerfile.dev
+    container_name: profit-first-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    volumes:
+      - ./frontend-profit-first/client:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+    depends_on:
+      - backend
+    networks:
+      - profit-first-network-dev
+
+networks:
+  profit-first-network-dev:
+    driver: bridge
+
+volumes:
+  redis_data_dev:
+    driver: local

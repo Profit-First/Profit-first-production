@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: profit-first
+data:
+  NODE_ENV: "production"
+  PORT: "3000"
+  REDIS_URL: "redis://redis:6379"
+  AWS_REGION: "ap-south-1"
+  DYNAMODB_TABLE_NAME: "Users"
+  ONBOARDING_TABLE_NAME: "Onboarding"
+  SHOPIFY_PRODUCTS_TABLE: "shopify_products"
+  SHOPIFY_ORDERS_TABLE: "shopify_orders"
+  SHOPIFY_CUSTOMERS_TABLE: "shopify_customers"
+  SHOPIFY_CONNECTIONS_TABLE: "shopify_connections"
+  META_CONNECTIONS_TABLE: "meta_connections"
+  META_INSIGHTS_TABLE: "meta_insights"
+  SHIPROCKET_TABLE: "shiprocket_shipments"
