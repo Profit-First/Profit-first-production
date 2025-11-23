@@ -1,0 +1,159 @@
+# Full Application Deployment
+# Builds and deploys both backend and frontend together
+
+name: Full Application Deploy
+
+# Trigger on push to main or manual dispatch
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'  # Ignore documentation changes
+      - '.github/**'  # Ignore workflow changes
+  workflow_dispatch:  # Allow manual trigger
+
+# Environment variables
+env:
+  AWS_REGION: ap-south-1
+  BACKEND_ECR_REPO: profit-first-backend
+  FRONTEND_ECR_REPO: profit-first-frontend
+
+jobs:
+  build-backend:
+    name: Build Backend
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Configure AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      # Login to ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      # Build and push backend
+      - name: Build and push backend image
+        id: meta
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Building backend..."
+          docker build -t $ECR_REGISTRY/$BACKEND_ECR_REPO:$IMAGE_TAG \
+                       -t $ECR_REGISTRY/$BACKEND_ECR_REPO:latest \
+                       ./Auth-service
+          docker push $ECR_REGISTRY/$BACKEND_ECR_REPO:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$BACKEND_ECR_REPO:latest
+          echo "tags=$ECR_REGISTRY/$BACKEND_ECR_REPO:$IMAGE_TAG" >> $GITHUB_OUTPUT
+  
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Configure AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      # Login to ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      # Build and push frontend
+      - name: Build and push frontend image
+        id: meta
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Building frontend..."
+          docker build -t $ECR_REGISTRY/$FRONTEND_ECR_REPO:$IMAGE_TAG \
+                       -t $ECR_REGISTRY/$FRONTEND_ECR_REPO:latest \
+                       ./frontend-profit-first/client
+          docker push $ECR_REGISTRY/$FRONTEND_ECR_REPO:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$FRONTEND_ECR_REPO:latest
+          echo "tags=$ECR_REGISTRY/$FRONTEND_ECR_REPO:$IMAGE_TAG" >> $GITHUB_OUTPUT
+  
+  update-manifests:
+    name: Update Kubernetes Manifests
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend]
+    
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Configure AWS to get ECR registry URL
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      # Update backend manifest
+      - name: Update backend deployment
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|image: .*profit-first-backend.*|image: $ECR_REGISTRY/$BACKEND_ECR_REPO:$IMAGE_TAG|g" k8s/backend/backend-deployment.yaml
+      
+      # Update frontend manifest
+      - name: Update frontend deployment
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i "s|image: .*profit-first-frontend.*|image: $ECR_REGISTRY/$FRONTEND_ECR_REPO:$IMAGE_TAG|g" k8s/frontend/frontend-deployment.yaml
+      
+      # Commit and push changes
+      - name: Commit and push manifests
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/backend/backend-deployment.yaml k8s/frontend/frontend-deployment.yaml
+          git commit -m "CI: Deploy images $IMAGE_TAG [skip ci]" || echo "No changes"
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:main || echo "Nothing to push"
+      
+      # Deployment summary
+      - name: Deployment summary
+        run: |
+          echo "✅ Full application deployment complete!"
+          echo "Backend: ${{ needs.build-backend.outputs.image-tag }}"
+          echo "Frontend: ${{ needs.build-frontend.outputs.image-tag }}"
+          echo "ArgoCD will sync automatically"
