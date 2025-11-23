@@ -1,4 +1,4 @@
-# Backend Dockerfile
+# Backend Dockerfile - Production Build
 FROM node:18-alpine
 
 # Set working directory
