@@ -357,7 +357,7 @@ const Shipping = () => {
             )}
           </div>
 
-          <div className="bg-[#161616] rounded-xl shadow-md p-4 w-[450px] shadow-xl">
+          <div className="bg-[#161616] rounded-xl shadow-xl p-4 w-[450px]">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-white font-semibold text-sm">
                 Overall Shipment Status
