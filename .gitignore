@@ -9,7 +9,7 @@
 
 # Dependencies
 node_modules/
-package-lock.json
+# package-lock.json should be committed for reproducible builds
 
 # Environment Variables (IMPORTANT - Never commit!)
 .env
