@@ -43,7 +43,7 @@ import Shipping from "./pages/Shipping";
 import Products from "./pages/Products";
 import Returns from "./pages/Returns";
 import Blogs from "./pages/Blogs";
-import PrivacyPolicy from "./components/privacypolicy";
+import PrivacyPolicy from "./components/PrivacyPolicy";
 import RetryPage from "./pages/RetryPage";
 import Settings from "./pages/Settings";
 import Customerstory from "./pages/Customerstory";
