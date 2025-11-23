@@ -16,7 +16,7 @@ import {
 import DateRangeSelector from "../components/DateRangeSelector";
 import { subDays } from "date-fns";
 import { FiInfo, FiBarChart2 } from "react-icons/fi";
-import Samplemap from "../components/samplemap";
+import Samplemap from "../components/Samplemap";
 import axiosInstance from "../../axios";
 import { PulseLoader } from "react-spinners";
 
