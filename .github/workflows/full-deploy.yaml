@@ -50,6 +50,15 @@ jobs:
           echo "Cleaning up old Docker images..."
           docker image prune -af --filter "until=24h" || true
       
+      # Delete existing backend 'latest' tag
+      - name: Delete existing backend latest tag
+        run: |
+          echo "Deleting existing backend 'latest' tag..."
+          aws ecr batch-delete-image \
+            --repository-name $BACKEND_ECR_REPO \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=latest || echo "No 'latest' tag to delete"
+      
       # Build and push backend
       - name: Build and push backend image
         id: meta
@@ -111,6 +120,15 @@ jobs:
         run: |
           echo "Cleaning up old Docker images..."
           docker image prune -af --filter "until=24h" || true
+      
+      # Delete existing frontend 'latest' tag
+      - name: Delete existing frontend latest tag
+        run: |
+          echo "Deleting existing frontend 'latest' tag..."
+          aws ecr batch-delete-image \
+            --repository-name $FRONTEND_ECR_REPO \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=latest || echo "No 'latest' tag to delete"
       
       # Build and push frontend
       - name: Build and push frontend image

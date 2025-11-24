@@ -63,7 +63,18 @@ jobs:
           docker image prune -af --filter "until=24h" || true
           echo "Cleanup complete!"
       
-      # Step 6: Push Docker image to ECR
+      # Step 6: Delete existing 'latest' tag from ECR (if immutable)
+      - name: Delete existing latest tag
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          echo "Deleting existing 'latest' tag if it exists..."
+          aws ecr batch-delete-image \
+            --repository-name $ECR_REPOSITORY \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=latest || echo "No 'latest' tag to delete"
+      
+      # Step 7: Push Docker image to ECR
       - name: Push Docker image to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -74,7 +85,7 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "Push complete!"
       
-      # Step 7: Clean up old images from ECR (keep last 5)
+      # Step 8: Clean up old images from ECR (keep last 5)
       - name: Clean up old ECR images
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -96,7 +107,7 @@ jobs:
             echo "No old images to delete"
           fi
       
-      # Step 8: Update Kubernetes deployment manifest
+      # Step 9: Update Kubernetes deployment manifest
       - name: Update K8s deployment with new image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -107,7 +118,7 @@ jobs:
           sed -i "s|image: .*profit-first-backend.*|image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" $K8S_DEPLOYMENT_FILE
           echo "Manifest updated!"
       
-      # Step 9: Commit and push updated manifest
+      # Step 10: Commit and push updated manifest
       - name: Commit and push updated manifest
         env:
           IMAGE_TAG: ${{ github.sha }}
@@ -119,7 +130,7 @@ jobs:
           git commit -m "CI: Update backend image to $IMAGE_TAG [skip ci]" || echo "No changes to commit"
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:main || echo "Nothing to push"
       
-      # Step 10: Deployment complete
+      # Step 11: Deployment complete
       - name: Deployment complete
         if: success()
         run: |
