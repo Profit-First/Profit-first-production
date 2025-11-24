@@ -45,7 +45,7 @@ temp/
 # AWS credentials (extra safety)
 .aws/
 credentials
-config
+# Note: Don't ignore config/ folder - it contains app configuration files
 
 # OS generated files
 Thumbs.db
