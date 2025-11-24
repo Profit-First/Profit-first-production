@@ -12,8 +12,15 @@ data:
   NODE_ENV: "production"
   PORT: "3000"
   
-  # Redis connection (internal service)
+  # Redis connection (internal Kubernetes service)
+  # Format: redis://[service-name]:[port]
+  # The service name 'redis' resolves to redis.profit-first.svc.cluster.local
   REDIS_URL: "redis://redis:6379"
+  
+  # Frontend URL for CORS (UPDATE with your domain)
+  # For internal cluster communication, use service name
+  # For external access, use your domain
+  FRONTEND_URL: "https://yourdomain.com"
   
   # AWS region
   AWS_REGION: "ap-south-1"

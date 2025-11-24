@@ -8,9 +8,10 @@ metadata:
   namespace: profit-first
 
 data:
-  # Backend service connection (internal)
-  BACKEND_HOST: "backend"
-  BACKEND_PORT: "3000"
+  # API URL for frontend
+  # In Kubernetes, nginx proxies /api requests to backend service internally
+  # For external access via ingress, use your domain
+  VITE_API_URL: "/api"
   
-  # API URL for frontend (UPDATE with your domain)
-  VITE_API_URL: "https://api.yourdomain.com"
+  # Note: Nginx in frontend pod proxies /api to http://backend:3000
+  # See nginx.conf for proxy configuration
