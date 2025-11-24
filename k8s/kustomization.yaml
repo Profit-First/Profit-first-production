@@ -30,5 +30,6 @@ resources:
   - frontend/frontend-deployment.yaml
   - frontend/frontend-service.yaml
   
-  # 7. Ingress (external access)
-  - ingress/ingress.yaml
+  # 7. Ingress (external access) - OPTIONAL for testing
+  # Uncomment when you want to use domain-based access
+  # - ingress/ingress.yaml

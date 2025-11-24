@@ -9,9 +9,6 @@ metadata:
 
 data:
   # API URL for frontend
-  # In Kubernetes, nginx proxies /api requests to backend service internally
-  # For external access via ingress, use your domain
+  # For testing with port-forward: use /api (nginx proxies internally)
+  # For production with domain: use https://api.yourdomain.com
   VITE_API_URL: "/api"
-  
-  # Note: Nginx in frontend pod proxies /api to http://backend:3000
-  # See nginx.conf for proxy configuration

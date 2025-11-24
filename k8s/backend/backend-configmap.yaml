@@ -17,10 +17,9 @@ data:
   # The service name 'redis' resolves to redis.profit-first.svc.cluster.local
   REDIS_URL: "redis://redis:6379"
   
-  # Frontend URL for CORS (UPDATE with your domain)
-  # For internal cluster communication, use service name
-  # For external access, use your domain
-  FRONTEND_URL: "https://yourdomain.com"
+  # Frontend URL for CORS - Allow all origins for testing
+  # In production, set this to your actual domain
+  FRONTEND_URL: "http://localhost:3000"
   
   # AWS region
   AWS_REGION: "ap-south-1"
