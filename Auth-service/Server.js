@@ -1,11 +1,12 @@
 /**
  * Main Express Server - Auth Service
  * 
- * Production-ready authentication and business logic server.
+ * Production-ready authentication and business logic server with Redis caching.
  * 
  * ARCHITECTURE:
  * - AWS Cognito: User authentication and JWT token management
  * - DynamoDB: User data storage (profiles, onboarding status, integrations)
+ * - Redis: In-memory caching for improved performance
  * - Express: REST API server
  * 
  * KEY FEATURES:
