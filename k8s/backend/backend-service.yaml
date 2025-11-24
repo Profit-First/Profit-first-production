@@ -1,25 +1,20 @@
-# Backend Service - Load balancer for backend pods
-# Provides a stable endpoint for frontend to communicate with backend
+# Backend Service - Internal service for backend pods
+# Frontend connects to this internally
 
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend  # DNS name: backend.profit-first.svc.cluster.local
+  name: backend
   namespace: profit-first
   labels:
     app: backend
 
 spec:
-  # LoadBalancer: Accessible from outside cluster for testing
-  type: LoadBalancer
-  
-  # Port configuration
+  type: ClusterIP  # Internal only - frontend proxies to this
   ports:
-  - port: 3000          # Service port (what other pods use to connect)
-    targetPort: 3000    # Container port (where backend listens)
+  - port: 3000
+    targetPort: 3000
     protocol: TCP
     name: http
-  
-  # Selector: Routes traffic to pods with matching labels
   selector:
     app: backend

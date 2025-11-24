@@ -6,10 +6,10 @@ metadata:
   labels:
     app: frontend
 spec:
-  type: LoadBalancer  # Changed from ClusterIP for direct access
+  type: LoadBalancer
   ports:
-  - port: 80
-    targetPort: 80
+  - port: 8084  # External port
+    targetPort: 80  # Container port (nginx listens on 80)
     protocol: TCP
     name: http
   selector:
