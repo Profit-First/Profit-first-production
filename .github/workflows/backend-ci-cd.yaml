@@ -72,7 +72,10 @@ jobs:
           aws ecr batch-delete-image \
             --repository-name $ECR_REPOSITORY \
             --region ${{ env.AWS_REGION }} \
-            --image-ids imageTag=latest || echo "No 'latest' tag to delete"
+            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag to delete or already deleted"
+          
+          # Wait a moment for ECR to process the deletion
+          sleep 2
       
       # Step 7: Push Docker image to ECR
       - name: Push Docker image to ECR

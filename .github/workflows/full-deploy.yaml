@@ -57,7 +57,8 @@ jobs:
           aws ecr batch-delete-image \
             --repository-name $BACKEND_ECR_REPO \
             --region ${{ env.AWS_REGION }} \
-            --image-ids imageTag=latest || echo "No 'latest' tag to delete"
+            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag to delete"
+          sleep 2
       
       # Build and push backend
       - name: Build and push backend image
@@ -128,7 +129,8 @@ jobs:
           aws ecr batch-delete-image \
             --repository-name $FRONTEND_ECR_REPO \
             --region ${{ env.AWS_REGION }} \
-            --image-ids imageTag=latest || echo "No 'latest' tag to delete"
+            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag to delete"
+          sleep 2
       
       # Build and push frontend
       - name: Build and push frontend image
