@@ -1,13 +1,24 @@
+# Backend ConfigMap - Non-sensitive configuration
+# Contains environment variables that are not secret
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backend-config
   namespace: profit-first
+
 data:
+  # Application settings
   NODE_ENV: "production"
   PORT: "3000"
+  
+  # Redis connection (internal service)
   REDIS_URL: "redis://redis:6379"
+  
+  # AWS region
   AWS_REGION: "ap-south-1"
+  
+  # DynamoDB table names
   DYNAMODB_TABLE_NAME: "Users"
   ONBOARDING_TABLE_NAME: "Onboarding"
   SHOPIFY_PRODUCTS_TABLE: "shopify_products"

@@ -25,8 +25,8 @@ spec:
     spec:
       containers:
       - name: frontend
-        # Docker image - UPDATE THIS with your actual registry and image
-        image: your-registry/profit-first-frontend:latest
+        # Docker image - Will be updated by CI/CD pipeline
+        image: 243547230894.dkr.ecr.ap-south-1.amazonaws.com/profit-first-frontend:latest
         imagePullPolicy: Always
         
         # Nginx listens on port 80

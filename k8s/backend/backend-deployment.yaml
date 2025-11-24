@@ -32,8 +32,8 @@ spec:
     spec:
       containers:
       - name: backend
-        # Docker image - UPDATE THIS with your actual registry and image
-        image: your-registry/profit-first-backend:latest
+        # Docker image - Will be updated by CI/CD pipeline
+        image: 243547230894.dkr.ecr.ap-south-1.amazonaws.com/profit-first-backend:latest
         # Always pull latest image
         imagePullPolicy: Always
         

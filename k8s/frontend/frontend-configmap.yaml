@@ -1,9 +1,16 @@
+# Frontend ConfigMap - Frontend configuration
+# Contains environment variables for the React app
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: frontend-config
   namespace: profit-first
+
 data:
+  # Backend service connection (internal)
   BACKEND_HOST: "backend"
   BACKEND_PORT: "3000"
+  
+  # API URL for frontend (UPDATE with your domain)
   VITE_API_URL: "https://api.yourdomain.com"
