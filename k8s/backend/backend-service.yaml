@@ -1,4 +1,4 @@
-# Backend Service - Internal load balancer for backend pods
+# Backend Service - Load balancer for backend pods
 # Provides a stable endpoint for frontend to communicate with backend
 
 apiVersion: v1
@@ -10,8 +10,8 @@ metadata:
     app: backend
 
 spec:
-  # ClusterIP: Internal only, not accessible from outside cluster
-  type: ClusterIP
+  # LoadBalancer: Accessible from outside cluster for testing
+  type: LoadBalancer
   
   # Port configuration
   ports:
