@@ -56,7 +56,14 @@ jobs:
                        ./Auth-service
           echo "Build complete!"
       
-      # Step 5: Push Docker image to ECR
+      # Step 5: Remove old images from local Docker (cleanup)
+      - name: Clean up old Docker images
+        run: |
+          echo "Cleaning up old Docker images..."
+          docker image prune -af --filter "until=24h" || true
+          echo "Cleanup complete!"
+      
+      # Step 6: Push Docker image to ECR
       - name: Push Docker image to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -67,7 +74,29 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "Push complete!"
       
-      # Step 6: Update Kubernetes deployment manifest
+      # Step 7: Clean up old images from ECR (keep last 5)
+      - name: Clean up old ECR images
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          echo "Cleaning up old images from ECR..."
+          # Get list of image digests to delete (keep last 5)
+          IMAGES_TO_DELETE=$(aws ecr list-images \
+            --repository-name $ECR_REPOSITORY \
+            --region ${{ env.AWS_REGION }} \
+            --query 'imageIds[?type(imageTag)==`string`] | sort_by(@, &imageTag) | [0:-5]' \
+            --output json)
+          
+          if [ "$IMAGES_TO_DELETE" != "[]" ] && [ "$IMAGES_TO_DELETE" != "null" ]; then
+            aws ecr batch-delete-image \
+              --repository-name $ECR_REPOSITORY \
+              --region ${{ env.AWS_REGION }} \
+              --image-ids "$IMAGES_TO_DELETE" || echo "No old images to delete"
+          else
+            echo "No old images to delete"
+          fi
+      
+      # Step 8: Update Kubernetes deployment manifest
       - name: Update K8s deployment with new image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -78,7 +107,7 @@ jobs:
           sed -i "s|image: .*profit-first-backend.*|image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" $K8S_DEPLOYMENT_FILE
           echo "Manifest updated!"
       
-      # Step 7: Commit and push updated manifest
+      # Step 9: Commit and push updated manifest
       - name: Commit and push updated manifest
         env:
           IMAGE_TAG: ${{ github.sha }}
@@ -90,8 +119,8 @@ jobs:
           git commit -m "CI: Update backend image to $IMAGE_TAG [skip ci]" || echo "No changes to commit"
           git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:main || echo "Nothing to push"
       
-      # Step 8: Trigger ArgoCD sync (optional - ArgoCD auto-syncs by default)
-      - name: Trigger ArgoCD sync
+      # Step 10: Deployment complete
+      - name: Deployment complete
         if: success()
         run: |
           echo "✅ Backend deployment updated!"
