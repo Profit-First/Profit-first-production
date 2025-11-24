@@ -9,7 +9,9 @@ metadata:
 
 data:
   # Application settings
-  NODE_ENV: "production"
+  # Set to "development" for testing without HTTPS
+  # Set to "production" when using domain with SSL
+  NODE_ENV: "development"
   PORT: "3000"
   
   # Redis connection (internal Kubernetes service)
