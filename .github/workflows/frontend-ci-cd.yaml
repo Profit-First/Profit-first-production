@@ -63,18 +63,26 @@ jobs:
           docker image prune -af --filter "until=24h" || true
           echo "Cleanup complete!"
       
-      # Step 6: Delete existing 'latest' tag from ECR (if immutable)
-      - name: Delete existing latest tag
+      # Step 6: Delete existing tags from ECR (if they exist)
+      - name: Delete existing tags
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "Deleting existing 'latest' tag if it exists..."
+          echo "Deleting existing tags if they exist..."
+          # Delete 'latest' tag
           aws ecr batch-delete-image \
             --repository-name $ECR_REPOSITORY \
             --region ${{ env.AWS_REGION }} \
-            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag to delete or already deleted"
+            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag to delete"
           
-          # Wait a moment for ECR to process the deletion
+          # Delete commit SHA tag (in case of rebuild)
+          aws ecr batch-delete-image \
+            --repository-name $ECR_REPOSITORY \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=$IMAGE_TAG 2>/dev/null || echo "No '$IMAGE_TAG' tag to delete"
+          
+          # Wait for ECR to process deletions
           sleep 2
       
       # Step 7: Push Docker image to ECR

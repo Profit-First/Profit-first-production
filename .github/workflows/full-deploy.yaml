@@ -50,14 +50,20 @@ jobs:
           echo "Cleaning up old Docker images..."
           docker image prune -af --filter "until=24h" || true
       
-      # Delete existing backend 'latest' tag
-      - name: Delete existing backend latest tag
+      # Delete existing backend tags
+      - name: Delete existing backend tags
+        env:
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "Deleting existing backend 'latest' tag..."
+          echo "Deleting existing backend tags..."
           aws ecr batch-delete-image \
             --repository-name $BACKEND_ECR_REPO \
             --region ${{ env.AWS_REGION }} \
-            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag to delete"
+            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag"
+          aws ecr batch-delete-image \
+            --repository-name $BACKEND_ECR_REPO \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=$IMAGE_TAG 2>/dev/null || echo "No '$IMAGE_TAG' tag"
           sleep 2
       
       # Build and push backend
@@ -122,14 +128,20 @@ jobs:
           echo "Cleaning up old Docker images..."
           docker image prune -af --filter "until=24h" || true
       
-      # Delete existing frontend 'latest' tag
-      - name: Delete existing frontend latest tag
+      # Delete existing frontend tags
+      - name: Delete existing frontend tags
+        env:
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "Deleting existing frontend 'latest' tag..."
+          echo "Deleting existing frontend tags..."
           aws ecr batch-delete-image \
             --repository-name $FRONTEND_ECR_REPO \
             --region ${{ env.AWS_REGION }} \
-            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag to delete"
+            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag"
+          aws ecr batch-delete-image \
+            --repository-name $FRONTEND_ECR_REPO \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=$IMAGE_TAG 2>/dev/null || echo "No '$IMAGE_TAG' tag"
           sleep 2
       
       # Build and push frontend
