@@ -36,8 +36,8 @@ spec:
         # Redis command with persistence enabled
         command:
         - redis-server
-        - --appendonly      # Enable AOF persistence
-        - "yes"
+        - --appendonly
+        - yes
         
         # Resource limits
         resources:
