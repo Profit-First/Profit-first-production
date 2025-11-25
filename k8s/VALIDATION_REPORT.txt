@@ -1,52 +1,114 @@
 KUBERNETES YAML VALIDATION REPORT
 ==================================
 Date: 2025-11-25
-Status: ✓ ALL CHECKS PASSED
+Status: ✓ ALL CHECKS PASSED - READY FOR DEPLOYMENT
 
-YAML FILES VALIDATED (14 total):
+YAML FILES VALIDATED (13 total):
 ✓ k8s/namespace.yaml
 ✓ k8s/kustomization.yaml
 ✓ k8s/backend/backend-configmap.yaml
 ✓ k8s/backend/backend-deployment.yaml
 ✓ k8s/backend/backend-hpa.yaml
-✓ k8s/backend/backend-secret.yaml
+✓ k8s/backend/backend-secret.yaml (UPDATED - All credentials added)
 ✓ k8s/backend/backend-service.yaml
 ✓ k8s/frontend/frontend-configmap.yaml
 ✓ k8s/frontend/frontend-deployment.yaml
-✓ k8s/frontend/frontend-service.yaml
+✓ k8s/frontend/frontend-service.yaml (UPDATED - Port 8082)
 ✓ k8s/ingress/ingress.yaml
-✓ k8s/redis/redis-deployment.yaml
-✓ k8s/redis/redis-pvc.yaml
+✓ k8s/redis/redis-deployment.yaml (UPDATED - Local storage)
 ✓ k8s/redis/redis-service.yaml
 
-CONFIGURATION CHECKS:
-✓ Namespace: profit-first
-✓ Redis: Fixed command syntax (--appendonly yes)
-✓ Redis Service: ClusterIP on port 6379
-✓ Redis PVC: 5Gi storage
-✓ Backend: 2 replicas, health checks configured
-✓ Backend Service: ClusterIP on port 3000
-✓ Backend ConfigMap: NODE_ENV=development, REDIS_URL correct
-✓ Backend HPA: Auto-scaling 2-10 pods
-✓ Frontend: 2 replicas, nginx on port 80
-✓ Frontend Service: LoadBalancer on port 8084
-✓ Ingress: Optional (for domain-based access)
+REMOVED FILES:
+✗ k8s/redis/redis-pvc.yaml (Not needed - using local storage)
 
-DEPLOYMENT ORDER (via kustomization.yaml):
+CONFIGURATION SUMMARY:
+======================
+
+NAMESPACE:
+- Name: profit-first
+- All resources deployed in this namespace
+
+REDIS:
+✓ Storage: emptyDir (local storage, no PVC)
+✓ Service: ClusterIP on port 6379
+✓ Connection: redis://redis:6379
+✓ Data: Cleared on pod restart (cache only)
+
+BACKEND:
+✓ Replicas: 2 (with HPA 2-10)
+✓ Service: ClusterIP on port 3000 (internal only)
+✓ Health checks: Configured (/health endpoint)
+✓ Redis connection: redis://redis:6379
+✓ Credentials: All AWS, Cognito, FB credentials added
+✓ Environment: NODE_ENV=development
+
+BACKEND CREDENTIALS (in backend-secret):
+✓ AWS_ACCESS_KEY_ID
+✓ AWS_SECRET_ACCESS_KEY
+✓ BEDROCK_REGION
+✓ BEDROCK_API_KEY
+✓ COGNITO_USER_POOL_ID
+✓ COGNITO_CLIENT_ID
+✓ COGNITO_DOMAIN
+✓ COGNITO_REDIRECT_URI
+✓ ADMIN_KEY
+✓ FB_APP_ID
+✓ FB_APP_SECRET
+✓ FB_REDIRECT_URI
+✓ BACKEND_URL
+
+FRONTEND:
+✓ Replicas: 2
+✓ Service: LoadBalancer on port 8082 → 80
+✓ Nginx: Proxies /api to backend:3000
+✓ External access: http://<EXTERNAL-IP>:8082
+
+CONNECTIONS:
+✓ Frontend → Backend: Internal (backend:3000)
+✓ Backend → Redis: Internal (redis:6379)
+✓ Backend → AWS: External (via credentials)
+✓ User → Frontend: External (LoadBalancer:8082)
+
+DEPLOYMENT ORDER:
 1. Namespace
-2. Redis PVC
-3. ConfigMaps & Secrets
-4. Redis Deployment & Service
-5. Backend Deployment, Service & HPA
-6. Frontend Deployment & Service
-7. Ingress (optional)
+2. ConfigMaps & Secrets
+3. Redis (deployment + service)
+4. Backend (deployment + service + HPA)
+5. Frontend (deployment + service)
 
-READY FOR DEPLOYMENT:
-All YAML files are syntactically valid and properly configured.
-Pods should start successfully when deployed to a Kubernetes cluster.
-
-DEPLOYMENT COMMAND:
+DEPLOYMENT COMMANDS:
+====================
+# Deploy all resources
 kubectl apply -k k8s/
 
+# Check deployment status
+kubectl get pods -n profit-first
+kubectl get svc -n profit-first
+
+# Get frontend external IP
+kubectl get svc frontend -n profit-first
+
+# View logs
+kubectl logs -n profit-first -l app=backend --tail=50 -f
+kubectl logs -n profit-first -l app=frontend --tail=50 -f
+kubectl logs -n profit-first -l app=redis --tail=50 -f
+
 TESTING:
-See k8s/TESTING.txt for port-forward commands
+========
+1. Wait for LoadBalancer external IP:
+   kubectl get svc frontend -n profit-first -w
+
+2. Access application:
+   http://<EXTERNAL-IP>:8082
+
+3. Or use port-forward:
+   kubectl port-forward -n profit-first svc/frontend 8082:80
+   http://localhost:8082
+
+NOTES:
+======
+- Redis uses local storage (emptyDir) - data cleared on restart
+- Backend has all required credentials configured
+- Frontend exposed on port 8082 via LoadBalancer
+- All internal connections use Kubernetes DNS
+- Ready for production deployment

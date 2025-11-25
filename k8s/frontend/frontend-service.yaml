@@ -8,7 +8,7 @@ metadata:
 spec:
   type: LoadBalancer
   ports:
-  - port: 8084  # External port
+  - port: 8082  # External port
     targetPort: 80  # Container port (nginx listens on 80)
     protocol: TCP
     name: http

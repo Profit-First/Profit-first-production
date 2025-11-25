@@ -9,27 +9,24 @@ resources:
   # 1. Namespace first
   - namespace.yaml
   
-  # 2. Storage (PVCs)
-  - redis/redis-pvc.yaml
-  
-  # 3. ConfigMaps and Secrets
+  # 2. ConfigMaps and Secrets
   - backend/backend-configmap.yaml
   - backend/backend-secret.yaml
   - frontend/frontend-configmap.yaml
   
-  # 4. Redis (dependency for backend)
+  # 3. Redis (dependency for backend) - using local storage
   - redis/redis-deployment.yaml
   - redis/redis-service.yaml
   
-  # 5. Backend (depends on Redis)
+  # 4. Backend (depends on Redis)
   - backend/backend-deployment.yaml
   - backend/backend-service.yaml
   - backend/backend-hpa.yaml
   
-  # 6. Frontend (depends on backend)
+  # 5. Frontend (depends on backend)
   - frontend/frontend-deployment.yaml
   - frontend/frontend-service.yaml
   
-  # 7. Ingress (external access) - OPTIONAL for testing
+  # 6. Ingress (external access) - OPTIONAL for testing
   # Uncomment when you want to use domain-based access
   # - ingress/ingress.yaml

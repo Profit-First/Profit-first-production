@@ -48,7 +48,7 @@ spec:
             memory: "256Mi"
             cpu: "200m"
         
-        # Mount persistent volume for data
+        # Mount local volume for data (no persistence needed)
         volumeMounts:
         - name: redis-data
           mountPath: /data  # Redis data directory
@@ -71,8 +71,7 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
       
-      # Persistent volume for Redis data
+      # Local storage (emptyDir) - data stored on node, no PVC needed
       volumes:
       - name: redis-data
-        persistentVolumeClaim:
-          claimName: redis-pvc  # Reference to PVC
+        emptyDir: {}  # Local storage, cleared when pod restarts
