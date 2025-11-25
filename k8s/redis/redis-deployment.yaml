@@ -1,59 +1,37 @@
-# Redis Deployment - In-memory cache for backend
-# Provides fast caching to improve application performance
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
   namespace: profit-first
-  labels:
-    app: redis
-
 spec:
-  # Single replica (for production, consider Redis Sentinel or Redis Cluster)
   replicas: 1
-  
   selector:
     matchLabels:
       app: redis
-  
   template:
     metadata:
       labels:
         app: redis
-    
     spec:
       containers:
       - name: redis
-        # Official Redis Alpine image (lightweight)
         image: redis:7-alpine
-        
-        # Redis default port
         ports:
         - containerPort: 6379
-          name: redis
-        
-        # Redis command with persistence enabled
         command:
         - redis-server
         - --appendonly
         - yes
-        
-        # Resource limits
         resources:
           requests:
-            memory: "128Mi"
             cpu: "100m"
+            memory: "128Mi"
           limits:
-            memory: "256Mi"
             cpu: "200m"
-        
-        # Mount local volume for data (no persistence needed)
+            memory: "256Mi"
         volumeMounts:
         - name: redis-data
-          mountPath: /data  # Redis data directory
-        
-        # Liveness probe - check if Redis is responding
+          mountPath: /data
         livenessProbe:
           exec:
             command:
@@ -61,8 +39,6 @@ spec:
             - ping
           initialDelaySeconds: 30
           periodSeconds: 10
-        
-        # Readiness probe - check if ready to accept connections
         readinessProbe:
           exec:
             command:
@@ -70,8 +46,6 @@ spec:
             - ping
           initialDelaySeconds: 5
           periodSeconds: 5
-      
-      # Local storage (emptyDir) - data stored on node, no PVC needed
       volumes:
       - name: redis-data
-        emptyDir: {}  # Local storage, cleared when pod restarts
+        emptyDir: {}

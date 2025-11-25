@@ -1,32 +1,14 @@
-# Backend ConfigMap - Non-sensitive configuration
-# Contains environment variables that are not secret
-
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: backend-config
   namespace: profit-first
-
 data:
-  # Application settings
-  # Set to "development" for testing without HTTPS
-  # Set to "production" when using domain with SSL
   NODE_ENV: "development"
-  PORT: "3000"
-  
-  # Redis connection (internal Kubernetes service)
-  # Format: redis://[service-name]:[port]
-  # The service name 'redis' resolves to redis.profit-first.svc.cluster.local
+  PORT: "3003"
   REDIS_URL: "redis://redis:6379"
-  
-  # Frontend URL for CORS - Allow all origins for testing
-  # In production, set this to your actual domain
-  FRONTEND_URL: "http://localhost:3000"
-  
-  # AWS region
+  FRONTEND_URL: "http://localhost:3003"
   AWS_REGION: "ap-south-1"
-  
-  # DynamoDB table names
   DYNAMODB_TABLE_NAME: "Users"
   ONBOARDING_TABLE_NAME: "Onboarding"
   SHOPIFY_PRODUCTS_TABLE: "shopify_products"

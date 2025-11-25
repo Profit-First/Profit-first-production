@@ -3,14 +3,11 @@ kind: Service
 metadata:
   name: frontend
   namespace: profit-first
-  labels:
-    app: frontend
 spec:
   type: LoadBalancer
   ports:
-  - port: 8082  # External port
-    targetPort: 80  # Container port (nginx listens on 80)
+  - port: 8082
+    targetPort: 80
     protocol: TCP
-    name: http
   selector:
     app: frontend

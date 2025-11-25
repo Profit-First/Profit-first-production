@@ -1,20 +1,13 @@
-# Backend Service - Internal service for backend pods
-# Frontend connects to this internally
-
 apiVersion: v1
 kind: Service
 metadata:
   name: backend
   namespace: profit-first
-  labels:
-    app: backend
-
 spec:
-  type: ClusterIP  # Internal only - frontend proxies to this
+  type: ClusterIP
   ports:
-  - port: 3000
-    targetPort: 3000
+  - port: 3003
+    targetPort: 3003
     protocol: TCP
-    name: http
   selector:
     app: backend

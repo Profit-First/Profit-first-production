@@ -1,0 +1,53 @@
+PORT CONFIGURATION SUMMARY
+==========================
+
+SERVICE PORTS:
+--------------
+
+FRONTEND:
+- Container Port: 80 (nginx)
+- Service Port: 8082 (LoadBalancer)
+- External Access: http://<EXTERNAL-IP>:8082
+- Ingress: Port 80
+
+BACKEND:
+- Container Port: 3003
+- Service Port: 3003 (ClusterIP - internal only)
+- Environment: PORT=3003
+- Health Check: /health on port 3003
+
+REDIS:
+- Container Port: 6379
+- Service Port: 6379 (ClusterIP - internal only)
+- Connection: redis://redis:6379
+- Storage: emptyDir (local, non-persistent)
+
+INTERNAL CONNECTIONS:
+---------------------
+Frontend → Backend: http://backend:3003 (nginx proxy)
+Backend → Redis: redis://redis:6379
+
+NO PORT CONFLICTS:
+------------------
+✓ Frontend: 80 (container) → 8082 (external)
+✓ Backend: 3003 (container) → 3003 (service)
+✓ Redis: 6379 (container) → 6379 (service)
+
+All services use different ports - no conflicts!
+
+TESTING COMMANDS:
+-----------------
+# Port forward frontend
+kubectl port-forward -n profit-first svc/frontend 8082:8082
+
+# Port forward backend
+kubectl port-forward -n profit-first svc/backend 3003:3003
+
+# Port forward redis
+kubectl port-forward -n profit-first svc/redis 6379:6379
+
+# Test backend health
+curl http://localhost:3003/health
+
+# Access frontend
+http://localhost:8082
