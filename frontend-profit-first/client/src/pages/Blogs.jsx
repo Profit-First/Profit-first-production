@@ -100,7 +100,7 @@ const Blogs = () => {
     {
       id: 4,
       category: "Insights",
-      title: "Ecommerce SEO in 2025: The New Rules for Ranking D2C Stores",
+      title: "Ecommerce SEO in 2025-2026: The New Rules for Ranking D2C Stores",
       author: "Shubham Soni",
       date: "Sep 15, 2025",
       image:
