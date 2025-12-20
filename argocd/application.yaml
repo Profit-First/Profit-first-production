@@ -1,0 +1,59 @@
+# ArgoCD Application Configuration
+# This file defines how ArgoCD should deploy and manage the Profit First application
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  # Application name in ArgoCD UI
+  name: profit-first-app
+  # ArgoCD namespace (where ArgoCD is installed)
+  namespace: argocd
+
+spec:
+  # Project to which this application belongs (default is fine for most cases)
+  project: default
+  
+  # Source: Where to get the Kubernetes manifests
+  source:
+    # Git repository URL - UPDATE THIS with your actual repository
+    repoURL: https://github.com/Profit-First/Profit-first-production.git
+    # Branch to track
+    targetRevision: main
+    # Path within the repository where k8s manifests are located
+    path: k8s
+  
+  # Destination: Where to deploy the application
+  destination:
+    # Kubernetes cluster (this points to the cluster where ArgoCD is running)
+    server: https://kubernetes.default.svc
+    # Target namespace for the application
+    namespace: profit-first
+  
+  # Sync Policy: How ArgoCD should sync the application
+  syncPolicy:
+    # Automated sync: ArgoCD will automatically sync when Git changes
+    automated:
+      # Prune: Delete resources that are no longer in Git
+      prune: true
+      # Self-heal: Automatically fix drift (if someone manually changes resources)
+      selfHeal: true
+      # Don't allow empty sync (safety check)
+      allowEmpty: false
+    
+    # Sync options
+    syncOptions:
+      # Automatically create namespace if it doesn't exist
+      - CreateNamespace=true
+    
+    # Retry policy: What to do if sync fails
+    retry:
+      # Maximum number of retry attempts
+      limit: 5
+      # Exponential backoff configuration
+      backoff:
+        # Initial retry delay
+        duration: 5s
+        # Multiply delay by this factor for each retry
+        factor: 2
+        # Maximum delay between retries
+        maxDuration: 3m

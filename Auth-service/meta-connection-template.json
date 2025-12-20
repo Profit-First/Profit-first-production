@@ -1,0 +1,46 @@
+{
+  "userId": {
+    "S": "e1a39d7a-6031-70c7-a3b2-494fda7e5b2c"
+  },
+  "email": {
+    "S": "aniketgaikwad72002@gmail.com"
+  },
+  "accessToken": {
+    "S": "PASTE_YOUR_META_ACCESS_TOKEN_HERE"
+  },
+  "adAccounts": {
+    "L": [
+      {
+        "M": {
+          "id": {
+            "S": "act_YOUR_ACCOUNT_ID"
+          },
+          "accountId": {
+            "S": "YOUR_ACCOUNT_ID"
+          },
+          "name": {
+            "S": "Your Ad Account Name"
+          },
+          "currency": {
+            "S": "USD"
+          }
+        }
+      }
+    ]
+  },
+  "facebookId": {
+    "S": "YOUR_FACEBOOK_USER_ID"
+  },
+  "status": {
+    "S": "active"
+  },
+  "connectedAt": {
+    "S": "2025-11-17T00:00:00.000Z"
+  },
+  "updatedAt": {
+    "S": "2025-11-17T00:00:00.000Z"
+  },
+  "apiVersion": {
+    "S": "v23.0"
+  }
+}

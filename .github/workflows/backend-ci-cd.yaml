@@ -1,0 +1,150 @@
+# Backend CI/CD Pipeline
+# Builds Docker image, pushes to registry, updates K8s manifests, triggers ArgoCD sync
+
+name: Backend CI/CD
+
+# Trigger on push to main branch or manual dispatch
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Auth-service/**'  # Only run when backend code changes
+      - '.github/workflows/backend-ci-cd.yaml'
+  workflow_dispatch:  # Allow manual trigger
+
+# Environment variables
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: profit-first-backend
+  K8S_DEPLOYMENT_FILE: k8s/backend/backend-deployment.yaml
+
+jobs:
+  build-and-deploy:
+    name: Build, Push, and Deploy Backend
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper versioning
+      
+      # Step 2: Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      # Step 3: Login to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      # Step 4: Build Docker image
+      - name: Build Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}  # Use commit SHA as tag
+        run: |
+          echo "Building backend image..."
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+                       -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+                       ./Auth-service
+          echo "Build complete!"
+      
+      # Step 5: Remove old images from local Docker (cleanup)
+      - name: Clean up old Docker images
+        run: |
+          echo "Cleaning up old Docker images..."
+          docker image prune -af --filter "until=24h" || true
+          echo "Cleanup complete!"
+      
+      # Step 6: Delete existing tags from ECR (if they exist)
+      - name: Delete existing tags
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Deleting existing tags if they exist..."
+          # Delete 'latest' tag
+          aws ecr batch-delete-image \
+            --repository-name $ECR_REPOSITORY \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=latest 2>/dev/null || echo "No 'latest' tag to delete"
+          
+          # Delete commit SHA tag (in case of rebuild)
+          aws ecr batch-delete-image \
+            --repository-name $ECR_REPOSITORY \
+            --region ${{ env.AWS_REGION }} \
+            --image-ids imageTag=$IMAGE_TAG 2>/dev/null || echo "No '$IMAGE_TAG' tag to delete"
+          
+          # Wait for ECR to process deletions
+          sleep 2
+      
+      # Step 7: Push Docker image to ECR
+      - name: Push Docker image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Pushing backend image..."
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "Push complete!"
+      
+      # Step 8: Clean up old images from ECR (keep last 5)
+      - name: Clean up old ECR images
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          echo "Cleaning up old images from ECR..."
+          # Get list of image digests to delete (keep last 5)
+          IMAGES_TO_DELETE=$(aws ecr list-images \
+            --repository-name $ECR_REPOSITORY \
+            --region ${{ env.AWS_REGION }} \
+            --query 'imageIds[?type(imageTag)==`string`] | sort_by(@, &imageTag) | [0:-5]' \
+            --output json)
+          
+          if [ "$IMAGES_TO_DELETE" != "[]" ] && [ "$IMAGES_TO_DELETE" != "null" ]; then
+            aws ecr batch-delete-image \
+              --repository-name $ECR_REPOSITORY \
+              --region ${{ env.AWS_REGION }} \
+              --image-ids "$IMAGES_TO_DELETE" || echo "No old images to delete"
+          else
+            echo "No old images to delete"
+          fi
+      
+      # Step 9: Update Kubernetes deployment manifest
+      - name: Update K8s deployment with new image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "Updating Kubernetes manifest..."
+          # Replace image in deployment file
+          sed -i "s|image: .*profit-first-backend.*|image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|g" $K8S_DEPLOYMENT_FILE
+          echo "Manifest updated!"
+      
+      # Step 10: Commit and push updated manifest
+      - name: Commit and push updated manifest
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add $K8S_DEPLOYMENT_FILE
+          git commit -m "CI: Update backend image to $IMAGE_TAG [skip ci]" || echo "No changes to commit"
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:main || echo "Nothing to push"
+      
+      # Step 11: Deployment complete
+      - name: Deployment complete
+        if: success()
+        run: |
+          echo "✅ Backend deployment updated!"
+          echo "ArgoCD will automatically sync the changes"
+          echo "Image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"

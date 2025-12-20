@@ -1,0 +1,55 @@
+KUBERNETES TESTING COMMANDS
+===========================
+
+1. DEPLOY APPLICATION
+   kubectl apply -k k8s/
+
+2. CHECK STATUS
+   kubectl get pods -n profit-first
+   kubectl get svc -n profit-first
+
+3. PORT FORWARD FOR TESTING
+
+   Backend:
+   kubectl port-forward -n profit-first svc/backend 3000:3000
+   Test: curl http://localhost:3000/health
+
+   Frontend:
+   kubectl port-forward -n profit-first svc/frontend 8080:80
+   Test: Open browser http://localhost:8080
+
+   Redis:
+   kubectl port-forward -n profit-first svc/redis 6379:6379
+   Test: redis-cli -h localhost -p 6379 ping
+
+4. VIEW LOGS
+   kubectl logs -n profit-first -l app=backend --tail=50 -f
+   kubectl logs -n profit-first -l app=frontend --tail=50 -f
+   kubectl logs -n profit-first -l app=redis --tail=50 -f
+
+5. RESTART DEPLOYMENTS
+   kubectl rollout restart deployment/backend -n profit-first
+   kubectl rollout restart deployment/frontend -n profit-first
+   kubectl rollout restart deployment/redis -n profit-first
+
+HTTP/HTTPS CONFIGURATION
+========================
+
+CURRENT (Development/Testing):
+- NODE_ENV: development (no HTTPS enforcement)
+- Backend: HTTP on port 3000
+- Frontend: HTTP on port 80
+- Use port-forward for testing
+
+FOR PRODUCTION:
+1. Update k8s/backend/backend-configmap.yaml:
+   NODE_ENV: "production"
+   FRONTEND_URL: "https://yourdomain.com"
+
+2. Enable ingress:
+   Uncomment ingress in k8s/kustomization.yaml
+   Update domains in k8s/ingress/ingress.yaml
+
+3. Backend will auto-redirect HTTP to HTTPS
+   Frontend nginx proxies to backend
+   Ingress handles SSL termination

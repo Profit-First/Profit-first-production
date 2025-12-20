@@ -1,0 +1,95 @@
+# Create ECR Repositories
+# One-time setup to create ECR repositories in AWS
+# Run manually via GitHub Actions UI
+
+name: Create ECR Repositories
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+env:
+  AWS_REGION: ap-south-1
+
+jobs:
+  create-repos:
+    name: Create ECR Repositories
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      # Step 2: Create backend ECR repository
+      - name: Create backend ECR repository
+        run: |
+          aws ecr create-repository \
+            --repository-name profit-first-backend \
+            --region ${{ env.AWS_REGION }} \
+            --image-scanning-configuration scanOnPush=true \
+            --encryption-configuration encryptionType=AES256 \
+            || echo "Backend repository already exists"
+      
+      # Step 3: Create frontend ECR repository
+      - name: Create frontend ECR repository
+        run: |
+          aws ecr create-repository \
+            --repository-name profit-first-frontend \
+            --region ${{ env.AWS_REGION }} \
+            --image-scanning-configuration scanOnPush=true \
+            --encryption-configuration encryptionType=AES256 \
+            || echo "Frontend repository already exists"
+      
+      # Step 4: Set lifecycle policies (keep last 10 images)
+      - name: Set lifecycle policy for backend
+        run: |
+          aws ecr put-lifecycle-policy \
+            --repository-name profit-first-backend \
+            --lifecycle-policy-text '{
+              "rules": [{
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }]
+            }' || echo "Policy already set"
+      
+      - name: Set lifecycle policy for frontend
+        run: |
+          aws ecr put-lifecycle-policy \
+            --repository-name profit-first-frontend \
+            --lifecycle-policy-text '{
+              "rules": [{
+                "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }]
+            }' || echo "Policy already set"
+      
+      # Step 5: Display repository URIs
+      - name: Display repository information
+        run: |
+          echo "✅ ECR Repositories created successfully!"
+          echo ""
+          echo "Backend Repository:"
+          aws ecr describe-repositories --repository-names profit-first-backend --region ${{ env.AWS_REGION }} --query 'repositories[0].repositoryUri' --output text
+          echo ""
+          echo "Frontend Repository:"
+          aws ecr describe-repositories --repository-names profit-first-frontend --region ${{ env.AWS_REGION }} --query 'repositories[0].repositoryUri' --output text

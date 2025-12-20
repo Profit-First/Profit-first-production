@@ -1,0 +1,97 @@
+KUBERNETES SERVICE CONNECTIONS
+==============================
+
+ARCHITECTURE:
+┌─────────────────────────────────────────────────────────┐
+│                    EXTERNAL ACCESS                       │
+│                                                          │
+│  User Browser → LoadBalancer (port 8082)                │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│                   FRONTEND SERVICE                       │
+│  Type: LoadBalancer                                      │
+│  External Port: 8082                                     │
+│  Internal Port: 80 (nginx)                               │
+│  Selector: app=frontend                                  │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│                   FRONTEND POD(S)                        │
+│  - Nginx web server (port 80)                            │
+│  - Serves React app                                      │
+│  - Proxies /api requests to backend                      │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+                    /api requests
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│                   BACKEND SERVICE                        │
+│  Type: ClusterIP (internal only)                         │
+│  Port: 3000                                              │
+│  Selector: app=backend                                   │
+│  DNS: backend.profit-first.svc.cluster.local             │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│                   BACKEND POD(S)                         │
+│  - Node.js/Express API (port 3000)                       │
+│  - Connects to Redis for caching                         │
+│  - Connects to AWS services (Cognito, DynamoDB, Bedrock) │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+                   Redis connection
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│                    REDIS SERVICE                         │
+│  Type: ClusterIP (internal only)                         │
+│  Port: 6379                                              │
+│  Selector: app=redis                                     │
+│  DNS: redis.profit-first.svc.cluster.local               │
+└─────────────────────────────────────────────────────────┘
+                          ↓
+┌─────────────────────────────────────────────────────────┐
+│                     REDIS POD                            │
+│  - Redis server (port 6379)                              │
+│  - Local storage (emptyDir)                              │
+│  - Data cleared on pod restart                           │
+└─────────────────────────────────────────────────────────┘
+
+CONNECTION DETAILS:
+===================
+
+1. FRONTEND → BACKEND
+   - Nginx config: proxy_pass http://backend:3000
+   - Service DNS resolves to: backend.profit-first.svc.cluster.local
+   - All /api requests are proxied to backend
+
+2. BACKEND → REDIS
+   - Environment variable: REDIS_URL=redis://redis:6379
+   - Service DNS resolves to: redis.profit-first.svc.cluster.local
+   - Used for session caching and data caching
+
+3. BACKEND → AWS SERVICES
+   - Cognito: User authentication
+   - DynamoDB: Data storage
+   - Bedrock: AI chat functionality
+   - Credentials from backend-secret
+
+EXTERNAL ACCESS:
+================
+- Frontend LoadBalancer exposes port 8082
+- Access application: http://<EXTERNAL-IP>:8082
+- Get external IP: kubectl get svc frontend -n profit-first
+
+PORT FORWARDING (for testing):
+==============================
+Frontend: kubectl port-forward -n profit-first svc/frontend 8082:80
+Backend:  kubectl port-forward -n profit-first svc/backend 3000:3000
+Redis:    kubectl port-forward -n profit-first svc/redis 6379:6379
+
+STORAGE:
+========
+Redis uses emptyDir (local storage):
+- Fast performance
+- No PVC needed
+- Data cleared when pod restarts
+- Suitable for cache data
