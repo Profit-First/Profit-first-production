@@ -31,6 +31,12 @@ router.post('/modifyprice', onboardingController.modifyPrice);
 // Background sync of orders and customers
 router.post('/background-sync', onboardingController.backgroundSync);
 
+// Manual sync - triggered by "Sync Now" button on dashboard
+router.post('/manual-sync', onboardingController.manualSync);
+
+// Get sync status - for polling progress
+router.get('/sync-status', onboardingController.getSyncStatus);
+
 // Fetch products from Shopify
 router.get('/fetchproduct', onboardingController.fetchProducts);
 

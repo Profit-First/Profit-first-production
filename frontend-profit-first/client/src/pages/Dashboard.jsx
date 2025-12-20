@@ -147,6 +147,10 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
+
   const [dateRange, setDateRange] = useState(() => {
     // Set to last 30 days by default
     const endDate = new Date();
@@ -221,7 +225,77 @@ const Dashboard = () => {
     }
   }, [dashboardData, performanceChartData, marketingChart, customerTypeByDay, pieData]);
 
-
+  // Sync handler - triggers manual sync and polls for status
+  const handleSync = async () => {
+    try {
+      setIsSyncing(true);
+      setSyncStatus({ status: 'in_progress', message: 'Starting sync...' });
+      
+      // Start the sync
+      await axiosInstance.post('/onboard/manual-sync');
+      
+      // Poll for status every 5 seconds (reduced from 2s to avoid excessive requests)
+      let pollCount = 0;
+      const maxPolls = 120; // 10 minutes max (120 * 5 seconds)
+      
+      const pollInterval = setInterval(async () => {
+        pollCount++;
+        
+        // Stop polling after max attempts
+        if (pollCount >= maxPolls) {
+          clearInterval(pollInterval);
+          setIsSyncing(false);
+          setSyncStatus({ status: 'error', message: 'Sync timeout - please try again' });
+          setTimeout(() => setSyncStatus(null), 5000);
+          return;
+        }
+        
+        try {
+          const response = await axiosInstance.get('/onboard/sync-status');
+          const status = response.data.status;
+          setSyncStatus(status);
+          
+          // If sync is complete or errored, stop polling
+          if (status.status === 'completed' || status.status === 'error' || status.status === 'idle') {
+            clearInterval(pollInterval);
+            setIsSyncing(false);
+            
+            // If completed successfully, refresh dashboard data
+            if (status.status === 'completed') {
+              console.log('✅ Sync completed, refreshing dashboard...');
+              // Trigger dashboard refresh by updating dateRange (same values)
+              setDateRange(prev => ({ ...prev }));
+            }
+            
+            // Auto-hide status message after 5 seconds
+            setTimeout(() => {
+              setSyncStatus(null);
+            }, 5000);
+          }
+        } catch (err) {
+          console.error('Error polling sync status:', err);
+          clearInterval(pollInterval);
+          setIsSyncing(false);
+          setSyncStatus({ status: 'error', message: 'Failed to get sync status' });
+          
+          // Auto-hide error after 5 seconds
+          setTimeout(() => {
+            setSyncStatus(null);
+          }, 5000);
+        }
+      }, 5000); // Poll every 5 seconds instead of 2
+      
+    } catch (err) {
+      console.error('Error starting sync:', err);
+      setIsSyncing(false);
+      setSyncStatus({ status: 'error', message: 'Failed to start sync' });
+      
+      // Auto-hide error after 5 seconds
+      setTimeout(() => {
+        setSyncStatus(null);
+      }, 5000);
+    }
+  };
 
   // Handlers
   const onPieEnter = (_, index) => setActiveIndex(index);
@@ -319,6 +393,46 @@ const Dashboard = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Dashboard</h2>
         <div className="flex items-center gap-4 relative">
+          {/* Sync Button */}
+          <button
+            onClick={handleSync}
+            disabled={isSyncing}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-all ${
+              isSyncing 
+                ? 'bg-gray-600 cursor-not-allowed' 
+                : 'bg-[#12EB8E] hover:bg-[#0fd67e] text-black'
+            }`}
+          >
+            {isSyncing ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>{syncStatus?.ordersCount ? `${syncStatus.ordersCount} orders` : 'Syncing...'}</span>
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Sync Now</span>
+              </>
+            )}
+          </button>
+          
+          {/* Sync Status Toast */}
+          {syncStatus && syncStatus.status === 'completed' && (
+            <div className="absolute top-full mt-2 right-0 bg-green-600 text-white px-4 py-2 rounded-md text-sm shadow-lg z-50">
+              ✓ {syncStatus.message}
+            </div>
+          )}
+          {syncStatus && syncStatus.status === 'error' && (
+            <div className="absolute top-full mt-2 right-0 bg-red-600 text-white px-4 py-2 rounded-md text-sm shadow-lg z-50">
+              ✗ {syncStatus.message}
+            </div>
+          )}
+          
           <button
             onClick={() => setShowDateSelector(!showDateSelector)}
             className="px-3 py-1 rounded-md text-sm border bg-[#161616] border-gray-700"

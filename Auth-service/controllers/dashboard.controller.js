@@ -16,10 +16,6 @@ const MAX_CACHE_SIZE = 200;
  * Get cached dashboard data (Redis or in-memory fallback)
  */
 async function getCachedDashboard(cacheKey) {
-  // TEMPORARILY DISABLED CACHE TO FORCE FRESH DATA
-  console.log(`🔄 Cache disabled - fetching fresh data`);
-  return null;
-  
   // Try Redis first
   if (isRedisConnected()) {
     try {
@@ -231,22 +227,46 @@ async function getShopifyProducts(userId) {
 
 async function getShopifyOrders(userId, startDate, endDate) {
   try {
-    // Fetch all orders for the user (no date filter in query)
-    const command = new QueryCommand({
-      TableName: process.env.SHOPIFY_ORDERS_TABLE || 'shopify_orders',
-      KeyConditionExpression: 'userId = :userId',
-      ExpressionAttributeValues: {
-        ':userId': userId
-      },
-      // Optimize: Only fetch required attributes
-      ProjectionExpression: 'userId, orderId, totalPrice, createdAt, lineItems, customerId, customer, orderData, financialStatus, fulfillmentStatus'
-    });
-    const result = await dynamoDB.send(command);
-    const allOrders = result.Items || [];
+    // Fetch all orders for the user with pagination (DynamoDB has 1MB limit per query)
+    let allOrders = [];
+    let lastEvaluatedKey = null;
+    let pageCount = 0;
+    
+    do {
+      pageCount++;
+      const command = new QueryCommand({
+        TableName: process.env.SHOPIFY_ORDERS_TABLE || 'shopify_orders',
+        KeyConditionExpression: 'userId = :userId',
+        ExpressionAttributeValues: {
+          ':userId': userId
+        },
+        // Continue from last position if paginating
+        ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
+      });
+      
+      const result = await dynamoDB.send(command);
+      const pageItems = result.Items || [];
+      allOrders = allOrders.concat(pageItems);
+      lastEvaluatedKey = result.LastEvaluatedKey;
+      
+      console.log(`   📄 DynamoDB Page ${pageCount}: ${pageItems.length} orders (Total so far: ${allOrders.length})`);
+      
+    } while (lastEvaluatedKey); // Keep fetching until no more pages
+    
+    console.log(`   📊 Total orders in DynamoDB: ${allOrders.length}`);
+    
+    // Debug: Log sample order dates
+    if (allOrders.length > 0) {
+      const sampleDates = allOrders.slice(0, 5).map(o => o.createdAt);
+      console.log(`   📅 Sample order dates: ${sampleDates.join(', ')}`);
+    }
     
     // Filter by date range in JavaScript (more reliable than DynamoDB FilterExpression)
     const filteredOrders = allOrders.filter(order => {
-      if (!order.createdAt) return false;
+      if (!order.createdAt) {
+        console.log(`   ⚠️ Order ${order.orderId} has no createdAt`);
+        return false;
+      }
       
       // Extract date from timestamp (YYYY-MM-DD)
       const orderDate = order.createdAt.split('T')[0];

@@ -553,6 +553,96 @@ class OnboardingController {
       });
     }
   }
+
+  /**
+   * Manual Sync - Trigger sync of last 3 months of Shopify orders
+   * Called when user clicks "Sync Now" button on dashboard
+   * 
+   * @route POST /api/onboard/manual-sync
+   * @access Protected
+   */
+  async manualSync(req, res) {
+    try {
+      const userId = req.user.userId;
+      
+      console.log(`\n🔄 Manual sync triggered for user: ${userId}`);
+      
+      // Check if sync is already in progress
+      const currentStatus = shopifySyncService.getSyncStatus(userId);
+      if (currentStatus && currentStatus.status === 'in_progress') {
+        return res.json({
+          success: true,
+          message: 'Sync already in progress',
+          status: currentStatus
+        });
+      }
+      
+      // Start sync in background
+      shopifySyncService.manualSync(userId)
+        .then(result => {
+          console.log(`✅ Manual sync completed for user ${userId}:`, result);
+        })
+        .catch(err => {
+          console.error(`❌ Manual sync error for user ${userId}:`, err.message);
+        });
+      
+      // Return immediately with initial status
+      res.json({
+        success: true,
+        message: 'Sync started',
+        status: {
+          status: 'in_progress',
+          stage: 'starting',
+          message: 'Starting sync...'
+        }
+      });
+      
+    } catch (error) {
+      console.error('Manual sync error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to start sync',
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Get Sync Status - Check progress of ongoing sync
+   * 
+   * @route GET /api/onboard/sync-status
+   * @access Protected
+   */
+  async getSyncStatus(req, res) {
+    try {
+      const userId = req.user.userId;
+      
+      const status = shopifySyncService.getSyncStatus(userId);
+      
+      if (!status) {
+        return res.json({
+          success: true,
+          status: {
+            status: 'idle',
+            message: 'No sync in progress'
+          }
+        });
+      }
+      
+      res.json({
+        success: true,
+        status
+      });
+      
+    } catch (error) {
+      console.error('Get sync status error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get sync status',
+        message: error.message
+      });
+    }
+  }
 }
 
 module.exports = new OnboardingController();

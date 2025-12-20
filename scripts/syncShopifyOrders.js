@@ -28,29 +28,59 @@ const SHOPIFY_API_VERSION = '2023-10';
 const ORDERS_TABLE = process.env.SHOPIFY_ORDERS_TABLE || 'shopify_orders';
 
 /**
- * Fetch orders from Shopify
+ * Fetch ALL orders from Shopify with pagination
  */
 async function fetchShopifyOrders() {
   try {
     console.log('🔍 Fetching orders from Shopify...');
     console.log(`   Store: ${SHOPIFY_STORE}`);
     
-    const response = await axios.get(
-      `https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/orders.json`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
-        },
-        params: {
-          status: 'any',
-          limit: 250 // Max 250 orders per request
+    let allOrders = [];
+    let pageInfo = null;
+    let pageCount = 0;
+    
+    do {
+      pageCount++;
+      const params = {
+        status: 'any',
+        limit: 250 // Max 250 orders per request
+      };
+      
+      // Use cursor-based pagination (page_info) for subsequent requests
+      if (pageInfo) {
+        params.page_info = pageInfo;
+      }
+      
+      const response = await axios.get(
+        `https://${SHOPIFY_STORE}/admin/api/${SHOPIFY_API_VERSION}/orders.json`,
+        {
+          headers: {
+            'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
+          },
+          params
+        }
+      );
+
+      const orders = response.data.orders;
+      allOrders = allOrders.concat(orders);
+      console.log(`   📄 Page ${pageCount}: ${orders.length} orders (Total: ${allOrders.length})`);
+      
+      // Check for next page in Link header
+      const linkHeader = response.headers.link;
+      pageInfo = null;
+      
+      if (linkHeader) {
+        // Parse Link header for next page
+        const nextMatch = linkHeader.match(/<[^>]*page_info=([^>&]*)[^>]*>;\s*rel="next"/);
+        if (nextMatch) {
+          pageInfo = nextMatch[1];
         }
       }
-    );
+      
+    } while (pageInfo);
 
-    const orders = response.data.orders;
-    console.log(`✅ Fetched ${orders.length} orders from Shopify`);
-    return orders;
+    console.log(`✅ Fetched ${allOrders.length} total orders from Shopify (${pageCount} pages)`);
+    return allOrders;
   } catch (error) {
     console.error('❌ Error fetching Shopify orders:', error.response?.data || error.message);
     throw error;

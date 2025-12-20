@@ -194,7 +194,7 @@ app.use(helmet({
  */
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per window
+  max: process.env.NODE_ENV === 'development' ? 1000 : 100, // Higher limit for dev
   message: 'Too many requests from this IP, please try again later.'
 });
 app.use('/api/', limiter);

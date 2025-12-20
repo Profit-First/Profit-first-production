@@ -15,7 +15,133 @@ const ORDERS_TABLE = process.env.SHOPIFY_ORDERS_TABLE || 'shopify_orders';
 const CUSTOMERS_TABLE = process.env.SHOPIFY_CUSTOMERS_TABLE || 'shopify_customers';
 const CONNECTIONS_TABLE = process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_connections';
 
+// In-memory sync status storage (for real-time progress tracking)
+const syncStatusMap = new Map();
+
 class ShopifySyncService {
+  
+  /**
+   * Get sync status for a user
+   */
+  getSyncStatus(userId) {
+    return syncStatusMap.get(userId) || null;
+  }
+  
+  /**
+   * Update sync status for a user
+   */
+  updateSyncStatus(userId, status) {
+    syncStatusMap.set(userId, {
+      ...status,
+      updatedAt: new Date().toISOString()
+    });
+  }
+  
+  /**
+   * Clear sync status for a user
+   */
+  clearSyncStatus(userId) {
+    syncStatusMap.delete(userId);
+  }
+
+  /**
+   * Manual Sync - Fetch last 3 months of orders with progress tracking
+   * Called when user clicks "Sync Now" button
+   * 
+   * @param {string} userId - User's unique ID
+   * @returns {Promise} - Sync result with order count
+   */
+  async manualSync(userId) {
+    console.log(`\n🔄 Starting manual sync for user: ${userId}`);
+    
+    // Initialize sync status
+    this.updateSyncStatus(userId, {
+      status: 'in_progress',
+      stage: 'starting',
+      ordersCount: 0,
+      message: 'Starting sync...'
+    });
+    
+    try {
+      // Get connection details
+      const connection = await this.getConnection(userId);
+      if (!connection) {
+        this.updateSyncStatus(userId, {
+          status: 'error',
+          message: 'No Shopify connection found'
+        });
+        return { success: false, error: 'No Shopify connection found' };
+      }
+      
+      const { shopUrl, accessToken } = connection;
+      console.log(`   Store: ${shopUrl}`);
+      
+      // Fetch ALL historical orders (no date filter for full sync)
+      // This ensures we get all orders, not just last 3 months
+      const startDate = null; // null = fetch ALL orders
+      
+      console.log(`   Fetching ALL historical orders...`);
+      
+      this.updateSyncStatus(userId, {
+        status: 'in_progress',
+        stage: 'fetching',
+        ordersCount: 0,
+        message: 'Fetching all orders from Shopify...'
+      });
+      
+      // Sync orders with progress callback
+      const ordersResult = await this.syncOrders(
+        userId, 
+        shopUrl, 
+        accessToken, 
+        startDate,
+        (progress) => {
+          this.updateSyncStatus(userId, {
+            status: 'in_progress',
+            stage: progress.stage,
+            ordersCount: progress.ordersCount,
+            page: progress.page,
+            message: progress.stage === 'fetching' 
+              ? `Fetching orders... (${progress.ordersCount} fetched)`
+              : `Saving ${progress.ordersCount} orders to database...`
+          });
+        }
+      );
+      
+      // Update sync timestamps
+      await this.updateConnectionSyncStatus(userId, {
+        lastOrderSync: new Date().toISOString(),
+        lastManualSync: new Date().toISOString()
+      });
+      
+      // Mark sync as complete
+      this.updateSyncStatus(userId, {
+        status: 'completed',
+        stage: 'done',
+        ordersCount: ordersResult.count,
+        message: `Successfully synced ${ordersResult.count} orders`
+      });
+      
+      console.log(`\n✅ Manual sync completed! Orders: ${ordersResult.count}`);
+      
+      return {
+        success: true,
+        data: {
+          orders: ordersResult.count
+        }
+      };
+    } catch (error) {
+      console.error(`❌ Manual sync failed:`, error.message);
+      
+      this.updateSyncStatus(userId, {
+        status: 'error',
+        message: `Sync failed: ${error.message}`
+      });
+      
+      return { success: false, error: error.message };
+    }
+  }
+
   /**
    * Initial Sync - Fetch last 3 months of data
    * Called after user completes Step 3 (product costs)
@@ -147,19 +273,23 @@ class ShopifySyncService {
   
   /**
    * Sync Orders from Shopify (with pagination to get ALL orders)
+   * Includes rate limiting: 500ms delay between requests
    */
-  async syncOrders(userId, shopUrl, accessToken, createdSince = null) {
+  async syncOrders(userId, shopUrl, accessToken, createdSince = null, progressCallback = null) {
     console.log(`📋 Syncing orders...`);
     
     try {
       let allOrders = [];
+      let pageCount = 0;
       let url = `https://${shopUrl}/admin/api/2024-01/orders.json?limit=250&status=any`;
       if (createdSince) {
         url += `&created_at_min=${createdSince}`;
       }
       
-      // Paginate through ALL orders
+      // Paginate through ALL orders with rate limiting
       while (url) {
+        pageCount++;
+        
         const response = await axios.get(url, {
           headers: {
             'X-Shopify-Access-Token': accessToken
@@ -169,6 +299,17 @@ class ShopifySyncService {
         const orders = response.data.orders || [];
         allOrders = allOrders.concat(orders);
         
+        console.log(`   📄 Page ${pageCount}: ${orders.length} orders (Total: ${allOrders.length})`);
+        
+        // Report progress if callback provided
+        if (progressCallback) {
+          progressCallback({
+            stage: 'fetching',
+            ordersCount: allOrders.length,
+            page: pageCount
+          });
+        }
+        
         // Check for next page in Link header
         const linkHeader = response.headers.link || response.headers['link'];
         url = null; // Reset URL
@@ -177,13 +318,23 @@ class ShopifySyncService {
           const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
           if (nextMatch) {
             url = nextMatch[1];
-            console.log(`   📄 Fetching next page... (${allOrders.length} orders so far)`);
+            // Rate limiting: wait 500ms before next request (Shopify allows 2 req/sec)
+            await new Promise(resolve => setTimeout(resolve, 500));
           }
         }
       }
       
       const orders = allOrders;
-      console.log(`   📦 Total orders fetched: ${orders.length}`);
+      console.log(`   📦 Total orders fetched: ${orders.length} (${pageCount} pages)`);
+      
+      // Report saving stage
+      if (progressCallback) {
+        progressCallback({
+          stage: 'saving',
+          ordersCount: orders.length,
+          page: pageCount
+        });
+      }
       
       // Store orders in DynamoDB using batch writes (25 items at a time)
       const batchSize = 25;
