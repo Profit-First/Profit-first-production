@@ -1,10 +1,12 @@
 import axios from 'axios';
 import { isTokenValid, logout } from "./src/utils/auth";
 
+// Use full URL for development, relative for production
+const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_BASE_URL = isDev ? 'http://localhost:3000/api' : '/api';
+
 const axiosInstance = axios.create({
-  // baseURL: 'http://localhost:3000/api',
-  baseURL: '/api',
-  // baseURL: 'https://profitfirst.co.in/api',
+  baseURL: API_BASE_URL,
 });
 
 axiosInstance.interceptors.request.use((config) => {
@@ -37,7 +39,7 @@ axiosInstance.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem("refreshToken");
         if (refreshToken) {
-          const response = await axios.post('/api/auth/refresh-token', {
+          const response = await axios.post(`${API_BASE_URL}/auth/refresh-token`, {
             refreshToken,
           });
 

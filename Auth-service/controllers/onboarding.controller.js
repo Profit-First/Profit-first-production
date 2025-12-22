@@ -61,9 +61,9 @@ class OnboardingController {
       await deleteCache(cacheKey);
       console.log(`🗑️  Cache invalidated: ${cacheKey}`);
 
-      // Trigger initial Shopify sync after Step 3 (product costs completed)
-      if (step === 3 && data.storeUrl && data.accessToken) {
-        console.log(`\n🚀 Step 3 completed - Triggering initial Shopify sync...`);
+      // Trigger initial Shopify sync after Step 2 (Shopify connection completed)
+      if (step === 2 && data.storeUrl && data.accessToken) {
+        console.log(`\n🚀 Step 2 completed - Triggering initial Shopify sync...`);
         
         // Run sync in background (don't wait for it)
         shopifySyncService.initialSync(userId, data.storeUrl, data.accessToken)

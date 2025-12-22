@@ -20,26 +20,38 @@ async function connectShiprocket(email, password) {
 
   console.log(`   📧 Authenticating with Shiprocket...`);
 
-  const response = await axios.post(
-    'https://apiv2.shiprocket.in/v1/external/auth/login',
-    { email, password },
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  try {
+    const response = await axios.post(
+      'https://apiv2.shiprocket.in/v1/external/auth/login',
+      { email, password },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
 
-  if (!response.data.token) {
-    throw new Error('Failed to get Shiprocket token');
+    if (!response.data.token) {
+      throw new Error('Failed to get Shiprocket token');
+    }
+
+    console.log(`   ✅ Shiprocket authenticated`);
+
+    return {
+      token: response.data.token,
+      email: email,
+      password: password, // Store for token refresh
+      company_id: response.data.company_id,
+      first_name: response.data.first_name,
+      last_name: response.data.last_name,
+      expiresAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString() // 10 days
+    };
+  } catch (error) {
+    if (error.response?.status === 403) {
+      console.log(`   ❌ Shiprocket returned 403 Forbidden`);
+      throw new Error('Shiprocket authentication failed (403 Forbidden). Please verify: 1) Your email and password are correct, 2) You can log into app.shiprocket.in with these credentials, 3) API access is enabled in your Shiprocket account');
+    }
+    if (error.response?.status === 401) {
+      throw new Error('Invalid Shiprocket credentials. Please check your email and password.');
+    }
+    throw error;
   }
-
-  console.log(`   ✅ Shiprocket authenticated`);
-
-  return {
-    token: response.data.token,
-    email: email,
-    company_id: response.data.company_id,
-    first_name: response.data.first_name,
-    last_name: response.data.last_name,
-    expiresAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString() // 10 days
-  };
 }
 
 /**
@@ -152,6 +164,13 @@ async function connectNimbuspost(email, password) {
  * Save shipping connection to database
  */
 async function saveConnection(userId, platform, connectionData) {
+  // Log what we're saving (mask password for security)
+  const logData = { ...connectionData };
+  if (logData.password) {
+    logData.password = '***STORED***';
+  }
+  console.log(`   💾 Saving ${platform} connection:`, logData);
+  
   const command = new PutCommand({
     TableName: SHIPPING_CONNECTIONS_TABLE,
     Item: {
@@ -165,6 +184,7 @@ async function saveConnection(userId, platform, connectionData) {
   });
 
   await dynamoDB.send(command);
+  console.log(`   ✅ Connection saved to database`);
 }
 
 /**
@@ -209,7 +229,18 @@ async function connectPlatform(req, res) {
     // Save connection to database
     await saveConnection(userId, platform, connectionData);
 
-    console.log(`✅ ${platform} connected successfully\n`);
+    console.log(`✅ ${platform} connected successfully`);
+
+    // Immediately sync shipments after connecting (for Shiprocket)
+    if (platform === 'Shiprocket' && connectionData.token) {
+      console.log(`🔄 Auto-syncing shipments after connection...`);
+      try {
+        const syncResult = await shiprocketService.syncShipments(userId, connectionData.token);
+        console.log(`✅ Auto-sync complete: ${syncResult.count} shipments\n`);
+      } catch (syncError) {
+        console.log(`⚠️  Auto-sync failed: ${syncError.message}\n`);
+      }
+    }
 
     res.json({
       success: true,

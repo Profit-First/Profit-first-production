@@ -112,12 +112,57 @@ async function getDashboardData(req, res) {
     console.log(`\n📊 Fetching fresh dashboard data for user: ${userId}`);
     console.log(`   Date range: ${startDate} to ${endDate}`);
 
+    // Check Shopify sync status first
+    const shopifySyncService = require('../services/shopify-sync.service');
+    const syncStatus = shopifySyncService.getSyncStatus(userId);
+    
+    // If sync is in progress, return sync status instead of incomplete data
+    if (syncStatus && syncStatus.status === 'in_progress') {
+      console.log(`🔄 Sync in progress for user: ${userId}`);
+      return res.json({
+        syncInProgress: true,
+        syncStatus: syncStatus,
+        message: 'Your data is being synced from Shopify. Please wait...'
+      });
+    }
+    
+    // Get connection and check if initial sync is needed
+    const shopifyConnection = await getShopifyConnection(userId);
+    
+    // Only show sync message if:
+    // 1. User has Shopify connection AND
+    // 2. Initial sync is not completed AND  
+    // 3. User has no orders in database (to avoid showing for existing users)
+    if (shopifyConnection && !shopifyConnection.initialSyncCompleted) {
+      // Quick check: do we have any orders for this user?
+      const existingOrders = await getShopifyOrders(userId, '2020-01-01', '2030-12-31'); // Wide date range
+      
+      if (existingOrders.length === 0) {
+        // No orders found - this is truly a new user needing initial sync
+        console.log(`⚠️  Initial sync required for new user: ${userId}`);
+        return res.json({
+          syncInProgress: true,
+          syncStatus: {
+            status: 'pending',
+            message: 'Initial data sync is required. Please wait while we fetch your Shopify data...'
+          },
+          message: 'Initial sync in progress...'
+        });
+      } else {
+        // User has orders - mark sync as completed to avoid future checks
+        console.log(`✅ Found ${existingOrders.length} existing orders, marking sync as completed for user: ${userId}`);
+        await shopifySyncService.updateConnectionSyncStatus(userId, {
+          initialSyncCompleted: true,
+          syncCompletedAt: new Date().toISOString()
+        });
+      }
+    }
+
     // Fetch data from all tables in parallel
-    const [
+    let [
       shopifyProducts,
       shopifyOrders,
       shopifyCustomers,
-      shopifyConnection,
       metaConnection,
       metaInsights,
       shippingConnection,
@@ -127,13 +172,26 @@ async function getDashboardData(req, res) {
       getShopifyProducts(userId),
       getShopifyOrders(userId, startDate, endDate),
       getShopifyCustomers(userId),
-      getShopifyConnection(userId),
       getMetaConnection(userId),
       getMetaInsights(userId, startDate, endDate),
       getShippingConnection(userId),
       getShiprocketShipments(userId, startDate, endDate),
       getOnboardingData(userId)
     ]);
+
+    // Auto-sync Shiprocket if connection exists but no shipments in DB
+    if (shippingConnection && shippingConnection.token && shiprocketShipments.length === 0) {
+      console.log(`🔄 Auto-syncing Shiprocket shipments...`);
+      try {
+        const shiprocketService = require('../services/shiprocket.service');
+        await shiprocketService.syncShipments(userId, shippingConnection.token);
+        // Re-fetch shipments after sync
+        shiprocketShipments = await getShiprocketShipments(userId, startDate, endDate);
+        console.log(`✅ Auto-sync complete: ${shiprocketShipments.length} shipments`);
+      } catch (syncError) {
+        console.log(`⚠️  Auto-sync failed: ${syncError.message}`);
+      }
+    }
 
     // Calculate all metrics in parallel for better performance
     const [
@@ -148,9 +206,9 @@ async function getDashboardData(req, res) {
       shipping,
       orderTypeData
     ] = await Promise.all([
-      Promise.resolve(calculateSummary(shopifyOrders, shopifyProducts, metaInsights, shiprocketShipments)),
+      Promise.resolve(calculateSummary(shopifyOrders, shopifyProducts, metaInsights, shiprocketShipments, onboardingData)),
       Promise.resolve(calculatePerformanceData(shopifyOrders, startDate, endDate)),
-      Promise.resolve(calculateFinancialBreakdown(shopifyOrders, shopifyProducts, metaInsights, shiprocketShipments)),
+      Promise.resolve(calculateFinancialBreakdown(shopifyOrders, shopifyProducts, metaInsights, shiprocketShipments, onboardingData)),
       Promise.resolve(calculateMarketingMetrics(metaInsights, shopifyOrders)),
       Promise.resolve(calculateMarketingChart(metaInsights, startDate, endDate)),
       Promise.resolve(calculateCustomerTypeData(shopifyOrders, startDate, endDate)),
@@ -177,6 +235,10 @@ async function getDashboardData(req, res) {
         shopify: !!shopifyConnection,
         meta: !!metaConnection,
         shipping: !!shippingConnection
+      },
+      syncStatus: {
+        shopifyInitialSyncCompleted: shopifyConnection?.initialSyncCompleted || false,
+        lastSyncAt: shopifyConnection?.syncCompletedAt || null
       },
       onboarding: onboardingData,
       shopifyOrders // Add raw orders for OrderConfirmation page
@@ -227,55 +289,33 @@ async function getShopifyProducts(userId) {
 
 async function getShopifyOrders(userId, startDate, endDate) {
   try {
-    // Fetch all orders for the user with pagination (DynamoDB has 1MB limit per query)
+    // Fetch all orders with pagination (DynamoDB has 1MB limit per query)
     let allOrders = [];
     let lastEvaluatedKey = null;
-    let pageCount = 0;
     
     do {
-      pageCount++;
       const command = new QueryCommand({
         TableName: process.env.SHOPIFY_ORDERS_TABLE || 'shopify_orders',
         KeyConditionExpression: 'userId = :userId',
         ExpressionAttributeValues: {
           ':userId': userId
         },
-        // Continue from last position if paginating
         ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
       });
       
       const result = await dynamoDB.send(command);
-      const pageItems = result.Items || [];
-      allOrders = allOrders.concat(pageItems);
+      allOrders = allOrders.concat(result.Items || []);
       lastEvaluatedKey = result.LastEvaluatedKey;
-      
-      console.log(`   📄 DynamoDB Page ${pageCount}: ${pageItems.length} orders (Total so far: ${allOrders.length})`);
-      
-    } while (lastEvaluatedKey); // Keep fetching until no more pages
+    } while (lastEvaluatedKey);
     
-    console.log(`   📊 Total orders in DynamoDB: ${allOrders.length}`);
-    
-    // Debug: Log sample order dates
-    if (allOrders.length > 0) {
-      const sampleDates = allOrders.slice(0, 5).map(o => o.createdAt);
-      console.log(`   📅 Sample order dates: ${sampleDates.join(', ')}`);
-    }
-    
-    // Filter by date range in JavaScript (more reliable than DynamoDB FilterExpression)
+    // Filter by date range in JavaScript
     const filteredOrders = allOrders.filter(order => {
-      if (!order.createdAt) {
-        console.log(`   ⚠️ Order ${order.orderId} has no createdAt`);
-        return false;
-      }
-      
-      // Extract date from timestamp (YYYY-MM-DD)
+      if (!order.createdAt) return false;
       const orderDate = order.createdAt.split('T')[0];
-      
-      // Compare dates as strings (works because ISO format)
       return orderDate >= startDate && orderDate <= endDate;
     });
     
-    console.log(`📦 Shopify Orders: ${filteredOrders.length} orders (filtered from ${allOrders.length} total) for date range ${startDate} to ${endDate}`);
+    console.log(`📦 Shopify Orders: ${filteredOrders.length} (from ${allOrders.length} total) for ${startDate} to ${endDate}`);
     return filteredOrders;
   } catch (error) {
     console.error('Error fetching Shopify orders:', error.message);
@@ -336,32 +376,46 @@ async function getMetaConnection(userId) {
 
 async function getMetaInsights(userId, startDate, endDate) {
   try {
-    // Fetch all insights for the user (no date filter in query)
-    const command = new QueryCommand({
+    // STRICT: Only use ad account 889786217551799 (Aurix Time AD)
+    const PRIMARY_AD_ACCOUNT = '889786217551799';
+    
+    const command = new ScanCommand({
       TableName: process.env.META_INSIGHTS_TABLE || 'meta_insights',
-      KeyConditionExpression: 'userId = :userId',
+      FilterExpression: 'userId = :userId AND #date BETWEEN :startDate AND :endDate AND adAccountId = :adAccountId',
       ExpressionAttributeValues: {
-        ':userId': userId
+        ':userId': userId,
+        ':startDate': startDate,
+        ':endDate': endDate,
+        ':adAccountId': PRIMARY_AD_ACCOUNT
       },
-      // Optimize: Only fetch required attributes
-      ProjectionExpression: 'userId, #date, adSpend, reach, linkClicks, impressions, metaRevenue',
       ExpressionAttributeNames: {
         '#date': 'date'
-      }
+      },
+      ProjectionExpression: 'userId, #date, adSpend, reach, linkClicks, impressions, metaRevenue, adAccountId'
     });
+    
     const result = await dynamoDB.send(command);
-    const allInsights = result.Items || [];
+    const insights = result.Items || [];
     
-    // Filter by date range in JavaScript
-    const filteredInsights = allInsights.filter(insight => {
-      if (!insight.date) return false;
-      
-      // Compare dates as strings (works because ISO format YYYY-MM-DD)
-      return insight.date >= startDate && insight.date <= endDate;
+    console.log(`📊 Meta Insights: Found ${insights.length} insights for account ${PRIMARY_AD_ACCOUNT} (${startDate} to ${endDate})`);
+    
+    if (insights.length === 0) {
+      console.log(`⚠️  No Meta insights found for ad account ${PRIMARY_AD_ACCOUNT}`);
+      return [];
+    }
+    
+    // Sort by date
+    const sortedInsights = insights.sort((a, b) => a.date.localeCompare(b.date));
+    
+    // Debug: Log ad spend details
+    console.log(`📊 Meta Ad Spend (Account ${PRIMARY_AD_ACCOUNT} only):`);
+    sortedInsights.forEach(insight => {
+      console.log(`   ${insight.date}: ₹${insight.adSpend || 0}`);
     });
+    const totalAdSpend = sortedInsights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
+    console.log(`   Total Ad Spend: ₹${totalAdSpend}`);
     
-    console.log(`📊 Meta Insights: ${filteredInsights.length} insights (filtered from ${allInsights.length} total) for date range ${startDate} to ${endDate}`);
-    return filteredInsights;
+    return sortedInsights;
   } catch (error) {
     console.error('Error fetching Meta insights:', error.message);
     return [];
@@ -458,39 +512,42 @@ async function getOnboardingData(userId) {
 
 // Calculation functions
 
-function calculateSummary(orders, products, metaInsights, shiprocketShipments) {
-  // Create product lookup map for O(1) access instead of O(n) find
+function calculateSummary(orders, products, metaInsights, shiprocketShipments, onboardingData) {
+  // Create product lookup map for O(1) access
+  // First, try to get costs from onboarding data (step3.productCosts)
   const productMap = new Map();
+  
+  // Get product costs from onboarding (primary source)
+  if (onboardingData?.step3?.productCosts) {
+    onboardingData.step3.productCosts.forEach(p => {
+      if (p.productId) {
+        productMap.set(p.productId.toString(), parseFloat(p.cost) || 0);
+      }
+    });
+    console.log(`📦 Loaded ${productMap.size} product costs from onboarding`);
+  }
+  
+  // Fallback: Also check products table for manufacturingCost
   products.forEach(p => {
-    if (p.productId) {
-      productMap.set(p.productId, p.manufacturingCost || 0);
+    if (p.productId && !productMap.has(p.productId.toString())) {
+      productMap.set(p.productId.toString(), p.manufacturingCost || 0);
     }
   });
   
   // Single pass through orders to calculate revenue and COGS
-  // Revenue = subtotalPrice (product revenue only, excludes shipping & tax)
-  // This matches Shopify's "Total Sales" in Analytics
   let revenue = 0;
-  let totalWithShippingTax = 0; // For reference
   let cogs = 0;
   
   orders.forEach(order => {
-    // Skip cancelled, refunded, or voided orders to match Shopify's revenue calculation
+    // Skip cancelled, refunded, or voided orders
     const financialStatus = (order.financialStatus || '').toLowerCase();
     if (financialStatus === 'refunded' || financialStatus === 'voided' || financialStatus === 'cancelled') {
-      console.log(`⚠️  Excluding order ${order.orderId} from revenue (status: ${financialStatus})`);
-      return; // Skip this order
+      return;
     }
     
-    // Use subtotalPrice if available (product revenue only), fallback to totalPrice
-    // subtotalPrice = product prices only (matches Shopify Analytics "Total Sales")
-    // totalPrice = products + shipping + tax - discounts
-    const subtotal = parseFloat(order.subtotalPrice || 0);
-    const total = parseFloat(order.totalPrice || 0);
-    
-    // Prefer subtotalPrice for accurate product revenue
-    revenue += subtotal > 0 ? subtotal : total;
-    totalWithShippingTax += total;
+    // Use totalPrice to match Shopify's total sales (includes shipping/taxes)
+    const total = parseFloat(order.totalPrice || order.subtotalPrice || 0);
+    revenue += total;
     
     // Calculate COGS for this order
     (order.lineItems || []).forEach(item => {
@@ -501,7 +558,7 @@ function calculateSummary(orders, products, metaInsights, shiprocketShipments) {
     });
   });
   
-  console.log(`📊 Revenue breakdown: Product Revenue (subtotal): ₹${revenue}, Total with shipping/tax: ₹${totalWithShippingTax}`);
+  console.log(`📊 Revenue: ₹${revenue} (using totalPrice to match Shopify)`);
   
   // Count only valid orders (exclude cancelled, refunded, voided)
   const totalOrders = orders.filter(order => {
@@ -511,6 +568,7 @@ function calculateSummary(orders, products, metaInsights, shiprocketShipments) {
   
   // Ad Spend (A) = Total amount spent on ads
   const adSpend = metaInsights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
+  console.log(`📊 Ad Spend Calculation: ${metaInsights.length} insights, Total: ₹${adSpend}`);
   
   // Shipping Cost (S) = Total logistics and shipping expense
   // Try to get from Shiprocket data first
@@ -610,10 +668,8 @@ function calculatePerformanceData(orders, startDate, endDate) {
     }
     
     const existing = ordersByDate.get(date);
-    // Use subtotalPrice (product revenue) to match Shopify Analytics
-    const subtotal = parseFloat(order.subtotalPrice || 0);
-    const total = parseFloat(order.totalPrice || 0);
-    const revenue = subtotal > 0 ? subtotal : total;
+    // Use totalPrice to match Shopify's total sales
+    const revenue = parseFloat(order.totalPrice || order.subtotalPrice || 0);
     
     // Estimate costs (COGS ~40%, Marketing ~15%, Shipping ~10%, Other ~5% = 70% total costs)
     const totalCosts = revenue * 0.70;
@@ -651,17 +707,27 @@ function calculatePerformanceData(orders, startDate, endDate) {
   return data;
 }
 
-function calculateFinancialBreakdown(orders, products, metaInsights, shiprocketShipments) {
-  // Create product lookup map for O(1) access
+function calculateFinancialBreakdown(orders, products, metaInsights, shiprocketShipments, onboardingData) {
+  // Create product lookup map - use onboarding data first
   const productMap = new Map();
+  
+  // Get product costs from onboarding (primary source)
+  if (onboardingData?.step3?.productCosts) {
+    onboardingData.step3.productCosts.forEach(p => {
+      if (p.productId) {
+        productMap.set(p.productId.toString(), parseFloat(p.cost) || 0);
+      }
+    });
+  }
+  
+  // Fallback to products table
   products.forEach(p => {
-    if (p.productId) {
-      productMap.set(p.productId, p.manufacturingCost || 0);
+    if (p.productId && !productMap.has(p.productId.toString())) {
+      productMap.set(p.productId.toString(), p.manufacturingCost || 0);
     }
   });
   
   // Single pass through orders to calculate revenue and COGS
-  // Use subtotalPrice (product revenue) to match Shopify Analytics
   let revenue = 0;
   let cogs = 0;
   
@@ -672,10 +738,8 @@ function calculateFinancialBreakdown(orders, products, metaInsights, shiprocketS
       return; // Skip this order
     }
     
-    // Use subtotalPrice if available (product revenue only), fallback to totalPrice
-    const subtotal = parseFloat(order.subtotalPrice || 0);
-    const total = parseFloat(order.totalPrice || 0);
-    revenue += subtotal > 0 ? subtotal : total;
+    // Use totalPrice to match Shopify's total sales
+    revenue += parseFloat(order.totalPrice || order.subtotalPrice || 0);
     
     (order.lineItems || []).forEach(item => {
       const productId = item.product_id?.toString();
@@ -687,6 +751,7 @@ function calculateFinancialBreakdown(orders, products, metaInsights, shiprocketS
   
   // Ad Spend (A) = Total marketing spend
   const adSpend = metaInsights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
+  console.log(`📊 Financial Breakdown - Ad Spend: ${metaInsights.length} insights, Total: ₹${adSpend}`);
   
   // Shipping Cost (S) = Total logistics expense
   // Try to get from Shiprocket data first
@@ -746,11 +811,9 @@ function calculateMarketingMetrics(metaInsights, orders) {
   const totalSpend = metaInsights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
   const totalReach = metaInsights.reduce((sum, insight) => sum + (insight.reach || 0), 0);
   const totalClicks = metaInsights.reduce((sum, insight) => sum + (insight.linkClicks || 0), 0);
-  // Use subtotalPrice (product revenue) to match Shopify Analytics
+  // Use totalPrice to match Shopify's total sales
   const revenue = orders.reduce((sum, order) => {
-    const subtotal = parseFloat(order.subtotalPrice || 0);
-    const total = parseFloat(order.totalPrice || 0);
-    return sum + (subtotal > 0 ? subtotal : total);
+    return sum + parseFloat(order.totalPrice || order.subtotalPrice || 0);
   }, 0);
   
   const roas = totalSpend > 0 ? revenue / totalSpend : 0;
@@ -1033,27 +1096,30 @@ function calculateShippingMetrics(shiprocketShipments, orders) {
     ];
   } else {
     // Fallback to Shopify orders if no Shiprocket data
-    console.log(`⚠️  No Shiprocket data, using Shopify orders for shipping metrics`);
-    const delivered = orders.filter(o => o.fulfillmentStatus === 'fulfilled').length;
-    const pending = orders.filter(o => !o.fulfillmentStatus || o.fulfillmentStatus === 'pending').length;
-    const totalOrders = orders.length;
-    const deliveryRate = totalOrders > 0 ? (delivered / totalOrders) * 100 : 0;
+    // RTO, NDR, Pickup Pending require Shiprocket connection for actual data
+    console.log(`⚠️  No Shiprocket data - RTO/NDR/Pickup require Shiprocket connection`);
+    console.log(`   To get actual data: Go to Settings > Shiprocket > Reconnect with your credentials`);
     
-    // Count prepaid vs COD from orders
+    const totalOrders = orders.length;
+    const delivered = orders.filter(o => o.fulfillmentStatus === 'fulfilled').length;
+    const pending = orders.filter(o => !o.fulfillmentStatus || o.fulfillmentStatus === 'pending' || o.fulfillmentStatus === 'partial').length;
+    
     const prepaidOrders = orders.filter(o => o.financialStatus === 'paid').length;
-    const codOrders = orders.length - prepaidOrders;
+    const codOrders = totalOrders - prepaidOrders;
+    
+    const deliveryRate = totalOrders > 0 ? (delivered / totalOrders) * 100 : 0;
 
     return [
       { title: 'Total Shipments', value: totalOrders.toString(), formula: 'Total number of orders' },
       { title: 'Delivered', value: delivered.toString(), formula: 'Successfully delivered orders' },
       { title: 'In-Transit', value: pending.toString(), formula: 'Orders in transit' },
-      { title: 'RTO', value: '0', formula: 'Return to origin' },
-      { title: 'NDR Pending', value: '0', formula: 'Non-delivery reports pending' },
+      { title: 'RTO', value: '-', formula: 'Reconnect Shiprocket in Settings' },
+      { title: 'NDR Pending', value: '-', formula: 'Reconnect Shiprocket in Settings' },
       { title: 'Delivery Rate', value: `${deliveryRate.toFixed(2)}%`, formula: '(Delivered / Total) × 100' },
-      { title: 'RTO Rate', value: '0.00%', formula: '(RTO / Total) × 100' },
+      { title: 'RTO Rate', value: '-', formula: 'Reconnect Shiprocket in Settings' },
       { title: 'Prepaid Orders', value: prepaidOrders.toString(), formula: 'Prepaid payment orders' },
       { title: 'COD', value: codOrders.toString(), formula: 'Cash on delivery orders' },
-      { title: 'Pickup Pending', value: '0', formula: 'Awaiting pickup' }
+      { title: 'Pickup Pending', value: '-', formula: 'Reconnect Shiprocket in Settings' }
     ];
   }
 }
@@ -1086,4 +1152,42 @@ function calculateOrderTypeData(orders) {
 
 module.exports = {
   getDashboardData
+};
+
+/**
+ * Get Sync Status
+ * @route GET /api/data/sync-status
+ * @access Protected
+ */
+async function getSyncStatus(req, res) {
+  try {
+    const userId = req.user.userId;
+    
+    const shopifySyncService = require('../services/shopify-sync.service');
+    const syncStatus = shopifySyncService.getSyncStatus(userId);
+    
+    // Also check connection status
+    const shopifyConnection = await getShopifyConnection(userId);
+    
+    res.json({
+      syncStatus: syncStatus || {
+        status: 'idle',
+        message: 'No sync in progress'
+      },
+      initialSyncCompleted: shopifyConnection?.initialSyncCompleted || false,
+      lastSyncAt: shopifyConnection?.syncCompletedAt || null
+    });
+    
+  } catch (error) {
+    console.error('Get sync status error:', error);
+    res.status(500).json({
+      error: 'Failed to get sync status',
+      message: error.message
+    });
+  }
+}
+
+module.exports = {
+  getDashboardData,
+  getSyncStatus
 };

@@ -13,6 +13,7 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState("Account");
   const [passwordData, setPasswordData] = useState({ oldPassword: "", newPassword: "", confirmPassword: "" });
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -29,13 +30,20 @@ export default function Settings() {
         });
         setShopify(data.onboarding?.step2 || { storeUrl: "", apiKey: "", apiSecret: "", accessToken: "" });
         setMeta(data.onboarding?.step4 || { adAccountId: "" });
-        setShiprocket(data.onboarding?.step5 || { shiproactId: "", shiproactPassword: "" });
+        // Use shipping connection email if available, otherwise fall back to onboarding step5
+        const shiprocketEmail = data.shippingConnection?.email || data.onboarding?.step5?.shiproactId || "";
+        setShiprocket({ 
+          shiproactId: shiprocketEmail, 
+          shiproactPassword: "",
+          connected: data.shippingConnection?.status === 'active',
+          connectedAt: data.shippingConnection?.connectedAt
+        });
       })
       .catch((err) => {
         console.error("Error fetching profile:", err);
         // Set profile to empty object to stop loading
         setProfile({});
-        alert("Failed to load profile");
+        alert("Failed to load profile. Please try refreshing the page.");
       });
   }, []);
 
@@ -279,7 +287,22 @@ export default function Settings() {
       {activeTab === "Shiprocket" && (
         <div className="bg-[#161616] p-6 rounded-lg shadow-md">
           <h2 className="text-xl font-semibold text-white mb-2">Shiprocket</h2>
-          <p className="text-gray-400 mb-4">Manage your Shiprocket credentials</p>
+          <p className="text-gray-400 mb-4">Manage your Shiprocket connection. Enter your credentials and click "Reconnect" to refresh your token.</p>
+          
+          {/* Connection Status */}
+          {shiprocket.connected && (
+            <div className="mb-4 p-3 bg-green-900/30 border border-green-700 rounded-lg">
+              <p className="text-green-400 text-sm">
+                ✅ Connected to Shiprocket
+                {shiprocket.connectedAt && (
+                  <span className="text-gray-400 ml-2">
+                    (since {new Date(shiprocket.connectedAt).toLocaleDateString()})
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
+          
           <div className="space-y-4">
             <div>
               <label className="block text-sm text-gray-300 mb-1">Email</label>
@@ -298,18 +321,48 @@ export default function Settings() {
                 value={shiprocket.shiproactPassword || ''}
                 onChange={e => setShiprocket(s => ({ ...s, shiproactPassword: e.target.value }))}
                 className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-white"
-                placeholder="Shiprocket Password"
+                placeholder="Enter password to reconnect"
               />
+              <p className="text-xs text-gray-500 mt-1">Password is required to reconnect. It will be stored securely for automatic token refresh.</p>
             </div>
           </div>
-          <div className="mt-6">
+          <div className="mt-6 flex gap-4">
             <button
-              onClick={() => save("/user/profile/shiprocket", shiprocket)}
-              className="bg-green-600 hover:bg-green-700 text-white font-medium px-6 py-2 rounded transition"
+              onClick={async () => {
+                if (!shiprocket.shiproactId || !shiprocket.shiproactPassword) {
+                  alert("Please enter both email and password");
+                  return;
+                }
+                try {
+                  setLoading(true);
+                  await axiosInstance.post("/shipping/connect", {
+                    platform: "Shiprocket",
+                    email: shiprocket.shiproactId,
+                    password: shiprocket.shiproactPassword
+                  });
+                  alert("✅ Shiprocket reconnected successfully! Your shipments will sync automatically.");
+                  // Update connection status
+                  setShiprocket(s => ({ ...s, connected: true, connectedAt: new Date().toISOString(), shiproactPassword: "" }));
+                } catch (err) {
+                  const errorMsg = err.response?.data?.message || err.message;
+                  if (errorMsg.includes('403')) {
+                    alert("❌ Shiprocket returned 403 Forbidden.\n\nPlease verify:\n1. Your email and password are correct\n2. You can log into app.shiprocket.in with these credentials\n3. API access is enabled in your Shiprocket account");
+                  } else {
+                    alert("❌ Failed to reconnect: " + errorMsg);
+                  }
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+              className="bg-green-600 hover:bg-green-700 text-white font-medium px-6 py-2 rounded transition disabled:opacity-50"
             >
-              Update
+              {loading ? "Connecting..." : "Reconnect Shiprocket"}
             </button>
           </div>
+          <p className="text-gray-500 text-sm mt-4">
+            Note: Reconnecting will refresh your Shiprocket token and enable automatic token refresh for future syncs.
+          </p>
         </div>
       )}
     </div>

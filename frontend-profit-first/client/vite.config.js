@@ -9,11 +9,17 @@ export default defineConfig({
     host: true,
     proxy: {
       "/api": {
-        // Docker: use 'backend:3000', Local: use 'localhost:3000'
-        // Check if running in Docker by looking for VITE_API_URL env var
-        target: process.env.VITE_API_URL || "http://localhost:3000",
+        target: "http://127.0.0.1:3000",
         changeOrigin: true,
         secure: false,
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Proxying:', req.method, req.url, '-> http://127.0.0.1:3000');
+          });
+        },
       },
     },
   },

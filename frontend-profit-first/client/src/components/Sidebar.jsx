@@ -222,14 +222,14 @@ const Sidebar = () => {
           {/* Footer Actions */}
           <div className="space-y-1 border-t border-gray-800 pt-4 pb-6">
             {/* Settings - Hidden for now */}
-            {/* <NavLink
+            <NavLink
               to="/dashboard/settings"
               onClick={() => setIsOpen(false)}
               className="flex items-center gap-2 p-2 rounded-lg text-gray-400 hover:bg-[#1a1a1a] hover:text-white transition-colors text-sm"
             >
               <FiSettings size={16} />
               <span>Settings</span>
-            </NavLink> */}
+            </NavLink>
             <button className="w-full flex items-center gap-2 p-2 rounded-lg text-gray-400 hover:bg-[#1a1a1a] hover:text-white transition-colors text-sm">
               <FiHelpCircle size={16} />
               <span>Help Center</span>

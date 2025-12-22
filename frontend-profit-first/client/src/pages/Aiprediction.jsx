@@ -470,8 +470,17 @@ const Aiprediction = () => {
 
   if (error) {
     return (
-      <div className="bg-[#0D1D1E] text-white p-6 h-screen flex justify-center items-center">
-        <p className="text-red-400">Error: {error}</p>
+      <div className="bg-[#0D1D1E] text-white p-6 h-screen flex flex-col justify-center items-center">
+        <p className="text-red-400 text-lg mb-4">Error: {error}</p>
+        <div className="text-gray-400 text-sm text-center max-w-md">
+          <p className="mb-2">This could happen if:</p>
+          <ul className="list-disc list-inside text-left">
+            <li>You have no orders in the last 2 months</li>
+            <li>Your Shopify sync hasn't completed</li>
+            <li>All recent orders are cancelled/refunded</li>
+          </ul>
+          <p className="mt-4">Please check your Dashboard to see if you have recent orders.</p>
+        </div>
       </div>
     );
   }

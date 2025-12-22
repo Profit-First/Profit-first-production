@@ -14,6 +14,7 @@ const PRODUCTS_TABLE = process.env.SHOPIFY_PRODUCTS_TABLE || 'shopify_products';
 const ORDERS_TABLE = process.env.SHOPIFY_ORDERS_TABLE || 'shopify_orders';
 const CUSTOMERS_TABLE = process.env.SHOPIFY_CUSTOMERS_TABLE || 'shopify_customers';
 const CONNECTIONS_TABLE = process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_connections';
+const ABANDONED_CARTS_TABLE = process.env.SHOPIFY_ABANDONED_CARTS_TABLE || 'shopify_abandoned_carts';
 
 // In-memory sync status storage (for real-time progress tracking)
 const syncStatusMap = new Map();
@@ -143,8 +144,8 @@ class ShopifySyncService {
   }
 
   /**
-   * Initial Sync - Fetch last 3 months of data
-   * Called after user completes Step 3 (product costs)
+   * Initial Sync - Fetch 3 months of historical data with progress tracking
+   * Called after user completes Step 2 (Shopify connection)
    * 
    * @param {string} userId - User's unique ID
    * @param {string} shopUrl - Shopify store URL
@@ -154,6 +155,14 @@ class ShopifySyncService {
     console.log(`\n🔄 Starting initial sync for user: ${userId}`);
     console.log(`   Store: ${shopUrl}`);
     
+    // Initialize sync status
+    this.updateSyncStatus(userId, {
+      status: 'in_progress',
+      stage: 'starting',
+      ordersCount: 0,
+      message: 'Starting initial data sync...'
+    });
+    
     try {
       // Calculate date 3 months ago
       const threeMonthsAgo = new Date();
@@ -162,19 +171,70 @@ class ShopifySyncService {
       
       console.log(`   Fetching data from: ${startDate}`);
       
-      // Sync all data in parallel
-      const [productsResult, ordersResult, customersResult] = await Promise.all([
-        this.syncProducts(userId, shopUrl, accessToken),
-        this.syncOrders(userId, shopUrl, accessToken, startDate),
-        this.syncCustomers(userId, shopUrl, accessToken, startDate)
-      ]);
+      // Update status
+      this.updateSyncStatus(userId, {
+        status: 'in_progress',
+        stage: 'fetching_products',
+        ordersCount: 0,
+        message: 'Fetching products from Shopify...'
+      });
+      
+      // Sync products first (fast)
+      const productsResult = await this.syncProducts(userId, shopUrl, accessToken);
+      
+      // Update status
+      this.updateSyncStatus(userId, {
+        status: 'in_progress',
+        stage: 'fetching_customers',
+        ordersCount: 0,
+        message: 'Fetching customers from Shopify...'
+      });
+      
+      // Sync customers (fast)
+      const customersResult = await this.syncCustomers(userId, shopUrl, accessToken, startDate);
+      
+      // Update status for orders (slow part)
+      this.updateSyncStatus(userId, {
+        status: 'in_progress',
+        stage: 'fetching_orders',
+        ordersCount: 0,
+        message: 'Fetching orders from Shopify... This may take several minutes.'
+      });
+      
+      // Sync orders with progress callback (slow part with rate limiting)
+      const ordersResult = await this.syncOrders(
+        userId, 
+        shopUrl, 
+        accessToken, 
+        startDate,
+        (progress) => {
+          this.updateSyncStatus(userId, {
+            status: 'in_progress',
+            stage: progress.stage,
+            ordersCount: progress.ordersCount,
+            page: progress.page,
+            message: progress.message || `Processing orders... (${progress.ordersCount} fetched)`
+          });
+        }
+      );
       
       // Update connection with sync timestamps
       await this.updateConnectionSyncStatus(userId, {
         lastProductSync: new Date().toISOString(),
         lastOrderSync: new Date().toISOString(),
         lastCustomerSync: new Date().toISOString(),
-        initialSyncCompleted: true
+        initialSyncCompleted: true,
+        syncCompletedAt: new Date().toISOString()
+      });
+      
+      // Mark sync as complete
+      this.updateSyncStatus(userId, {
+        status: 'completed',
+        stage: 'done',
+        ordersCount: ordersResult.count,
+        productsCount: productsResult.count,
+        customersCount: customersResult.count,
+        message: `Sync completed! ${ordersResult.count} orders, ${productsResult.count} products, ${customersResult.count} customers`
       });
       
       console.log(`\n✅ Initial sync completed successfully!`);
@@ -192,6 +252,14 @@ class ShopifySyncService {
       };
     } catch (error) {
       console.error(`❌ Initial sync failed:`, error.message);
+      
+      // Mark sync as failed
+      this.updateSyncStatus(userId, {
+        status: 'error',
+        stage: 'failed',
+        message: `Initial sync failed: ${error.message}`
+      });
+      
       return { success: false, error: error.message };
     }
   }
@@ -272,8 +340,8 @@ class ShopifySyncService {
   }
   
   /**
-   * Sync Orders from Shopify (with pagination to get ALL orders)
-   * Includes rate limiting: 500ms delay between requests
+   * Sync Orders from Shopify (with pagination and rate limiting)
+   * Includes 2-minute delays between requests to avoid rate limits
    */
   async syncOrders(userId, shopUrl, accessToken, createdSince = null, progressCallback = null) {
     console.log(`📋 Syncing orders...`);
@@ -286,40 +354,81 @@ class ShopifySyncService {
         url += `&created_at_min=${createdSince}`;
       }
       
-      // Paginate through ALL orders with rate limiting
+      // Paginate through ALL orders with 2-minute rate limiting
       while (url) {
         pageCount++;
         
-        const response = await axios.get(url, {
-          headers: {
-            'X-Shopify-Access-Token': accessToken
-          }
-        });
+        console.log(`   📄 Fetching page ${pageCount}...`);
         
-        const orders = response.data.orders || [];
-        allOrders = allOrders.concat(orders);
-        
-        console.log(`   📄 Page ${pageCount}: ${orders.length} orders (Total: ${allOrders.length})`);
-        
-        // Report progress if callback provided
-        if (progressCallback) {
-          progressCallback({
-            stage: 'fetching',
-            ordersCount: allOrders.length,
-            page: pageCount
+        try {
+          const response = await axios.get(url, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken
+            },
+            timeout: 30000 // 30 second timeout
           });
-        }
-        
-        // Check for next page in Link header
-        const linkHeader = response.headers.link || response.headers['link'];
-        url = null; // Reset URL
-        
-        if (linkHeader) {
-          const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
-          if (nextMatch) {
-            url = nextMatch[1];
-            // Rate limiting: wait 500ms before next request (Shopify allows 2 req/sec)
-            await new Promise(resolve => setTimeout(resolve, 500));
+          
+          const orders = response.data.orders || [];
+          allOrders = allOrders.concat(orders);
+          
+          console.log(`   📄 Page ${pageCount}: ${orders.length} orders (Total: ${allOrders.length})`);
+          
+          // Report progress if callback provided
+          if (progressCallback) {
+            progressCallback({
+              stage: 'fetching',
+              ordersCount: allOrders.length,
+              page: pageCount,
+              message: `Fetching page ${pageCount}... (${allOrders.length} orders so far)`
+            });
+          }
+          
+          // Check for next page in Link header
+          const linkHeader = response.headers.link || response.headers['link'];
+          url = null; // Reset URL
+          
+          if (linkHeader) {
+            const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+            if (nextMatch) {
+              url = nextMatch[1];
+              
+              // Rate limiting: wait 2 minutes between requests to avoid hitting limits
+              console.log(`   ⏳ Waiting 2 minutes before next request to avoid rate limits...`);
+              if (progressCallback) {
+                progressCallback({
+                  stage: 'waiting',
+                  ordersCount: allOrders.length,
+                  page: pageCount,
+                  message: `Waiting 2 minutes before fetching page ${pageCount + 1}... (Rate limit protection)`
+                });
+              }
+              
+              // Wait 2 minutes (120 seconds)
+              await new Promise(resolve => setTimeout(resolve, 120000));
+            }
+          }
+          
+        } catch (requestError) {
+          // Handle rate limit errors specifically
+          if (requestError.response?.status === 429) {
+            console.log(`   ⚠️  Rate limit hit, waiting 5 minutes before retry...`);
+            if (progressCallback) {
+              progressCallback({
+                stage: 'rate_limited',
+                ordersCount: allOrders.length,
+                page: pageCount,
+                message: 'Rate limit reached. Waiting 5 minutes before retrying...'
+              });
+            }
+            
+            // Wait 5 minutes for rate limit reset
+            await new Promise(resolve => setTimeout(resolve, 300000));
+            
+            // Don't increment pageCount, retry the same page
+            continue;
+          } else {
+            // Other errors, re-throw
+            throw requestError;
           }
         }
       }
@@ -332,7 +441,8 @@ class ShopifySyncService {
         progressCallback({
           stage: 'saving',
           ordersCount: orders.length,
-          page: pageCount
+          page: pageCount,
+          message: `Saving ${orders.length} orders to database...`
         });
       }
       
@@ -381,6 +491,9 @@ class ShopifySyncService {
             [ORDERS_TABLE]: putRequests
           }
         }));
+        
+        // Small delay between batch writes
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
       
       console.log(`   ✅ Synced ${orders.length} orders`);
@@ -388,6 +501,16 @@ class ShopifySyncService {
       return { success: true, count: orders.length };
     } catch (error) {
       console.error(`   ❌ Order sync failed:`, error.message);
+      
+      // Update sync status with error
+      if (progressCallback) {
+        progressCallback({
+          stage: 'error',
+          ordersCount: allOrders?.length || 0,
+          message: `Sync failed: ${error.message}`
+        });
+      }
+      
       return { success: false, count: 0, error: error.message };
     }
   }
@@ -496,10 +619,10 @@ class ShopifySyncService {
       
       console.log(`   Fetching changes since: ${updatedSince}`);
       
-      // Sync only updated data
+      // Sync only updated data (use faster rate limiting for daily sync)
       const [productsResult, ordersResult, customersResult] = await Promise.all([
         this.syncProducts(userId, shopUrl, accessToken, updatedSince),
-        this.syncOrders(userId, shopUrl, accessToken, updatedSince),
+        this.syncOrdersFast(userId, shopUrl, accessToken, updatedSince), // Use fast sync for daily updates
         this.syncCustomers(userId, shopUrl, accessToken, updatedSince)
       ]);
       
@@ -659,6 +782,123 @@ class ShopifySyncService {
     } catch (error) {
       console.error('Get cached customers error:', error.message);
       return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Fast Sync Orders - For daily updates (shorter delays)
+   * Used for daily sync when fetching only recent orders
+   */
+  async syncOrdersFast(userId, shopUrl, accessToken, createdSince = null) {
+    console.log(`📋 Fast syncing recent orders...`);
+    
+    try {
+      let allOrders = [];
+      let pageCount = 0;
+      let url = `https://${shopUrl}/admin/api/2024-01/orders.json?limit=250&status=any`;
+      if (createdSince) {
+        url += `&created_at_min=${createdSince}`;
+      }
+      
+      // Paginate with faster rate limiting (30 seconds instead of 2 minutes)
+      while (url) {
+        pageCount++;
+        
+        console.log(`   📄 Fast fetching page ${pageCount}...`);
+        
+        try {
+          const response = await axios.get(url, {
+            headers: {
+              'X-Shopify-Access-Token': accessToken
+            },
+            timeout: 30000
+          });
+          
+          const orders = response.data.orders || [];
+          allOrders = allOrders.concat(orders);
+          
+          console.log(`   📄 Page ${pageCount}: ${orders.length} orders (Total: ${allOrders.length})`);
+          
+          // Check for next page
+          const linkHeader = response.headers.link || response.headers['link'];
+          url = null;
+          
+          if (linkHeader) {
+            const nextMatch = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+            if (nextMatch) {
+              url = nextMatch[1];
+              
+              // Faster rate limiting for daily sync: 30 seconds
+              console.log(`   ⏳ Waiting 30 seconds before next request...`);
+              await new Promise(resolve => setTimeout(resolve, 30000));
+            }
+          }
+          
+        } catch (requestError) {
+          if (requestError.response?.status === 429) {
+            console.log(`   ⚠️  Rate limit hit, waiting 2 minutes before retry...`);
+            await new Promise(resolve => setTimeout(resolve, 120000));
+            continue;
+          } else {
+            throw requestError;
+          }
+        }
+      }
+      
+      const orders = allOrders;
+      console.log(`   📦 Total recent orders fetched: ${orders.length} (${pageCount} pages)`);
+      
+      // Store orders in DynamoDB
+      const batchSize = 25;
+      const syncTime = new Date().toISOString();
+      
+      for (let i = 0; i < orders.length; i += batchSize) {
+        const batch = orders.slice(i, i + batchSize);
+        const putRequests = batch.map(order => ({
+          PutRequest: {
+            Item: {
+              userId,
+              orderId: order.id.toString(),
+              shopUrl,
+              orderData: order,
+              syncedAt: syncTime,
+              createdAt: order.created_at,
+              updatedAt: order.updated_at,
+              
+              // Revenue fields
+              totalPrice: parseFloat(order.total_price || 0),
+              subtotalPrice: parseFloat(order.subtotal_price || 0),
+              totalTax: parseFloat(order.total_tax || 0),
+              totalDiscounts: parseFloat(order.total_discounts || 0),
+              totalShipping: parseFloat(order.total_shipping_price_set?.shop_money?.amount || 0),
+              
+              orderNumber: order.order_number,
+              customerId: order.customer?.id?.toString() || null,
+              customerEmail: order.customer?.email || null,
+              lineItems: order.line_items || [],
+              fulfillmentStatus: order.fulfillment_status || null,
+              financialStatus: order.financial_status || null,
+              confirmed: order.confirmed || false,
+              cancelledAt: order.cancelled_at || null
+            }
+          }
+        }));
+
+        await dynamoDB.send(new BatchWriteCommand({
+          RequestItems: {
+            [ORDERS_TABLE]: putRequests
+          }
+        }));
+        
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      console.log(`   ✅ Fast synced ${orders.length} recent orders`);
+      
+      return { success: true, count: orders.length };
+    } catch (error) {
+      console.error(`   ❌ Fast order sync failed:`, error.message);
+      return { success: false, count: 0, error: error.message };
     }
   }
 }

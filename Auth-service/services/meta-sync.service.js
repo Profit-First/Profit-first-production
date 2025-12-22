@@ -96,6 +96,7 @@ class MetaSyncService {
   
   /**
    * Fetch 3 months of historical data (for initial setup)
+   * Handles pagination to get ALL data
    */
   async fetch3MonthsData(userId) {
     console.log(`📊 Fetching 3 months of Meta data for user: ${userId}`);
@@ -127,7 +128,11 @@ class MetaSyncService {
         console.log(`   🔍 Fetching: ${account.name || numericAccountId}`);
         
         try {
-          // Fetch daily insights for 3 months
+          // Fetch daily insights with pagination
+          let allInsights = [];
+          let nextUrl = null;
+          
+          // First request
           const insightsResponse = await axios.get(
             `https://graph.facebook.com/${FB_API_VERSION}/${accountId}/insights`,
             {
@@ -136,16 +141,28 @@ class MetaSyncService {
                 fields: 'date_start,date_stop,spend,impressions,reach,clicks,cpc,cpm,ctr,frequency,actions,action_values',
                 time_range: JSON.stringify({ since, until }),
                 time_increment: 1, // Daily breakdown
-                level: 'account'
+                level: 'account',
+                limit: 500 // Request more data per page
               }
             }
           );
           
-          const insights = insightsResponse.data.data || [];
-          console.log(`   ✅ Fetched ${insights.length} days of data`);
+          allInsights = insightsResponse.data.data || [];
+          nextUrl = insightsResponse.data.paging?.next;
+          
+          // Handle pagination - fetch all pages
+          while (nextUrl) {
+            console.log(`   📄 Fetching next page...`);
+            const nextResponse = await axios.get(nextUrl);
+            const nextData = nextResponse.data.data || [];
+            allInsights = allInsights.concat(nextData);
+            nextUrl = nextResponse.data.paging?.next;
+          }
+          
+          console.log(`   ✅ Fetched ${allInsights.length} days of data`);
           
           // Store each day's insights
-          for (const dayInsight of insights) {
+          for (const dayInsight of allInsights) {
             await this.saveInsightData(userId, numericAccountId, dayInsight);
             totalRecords++;
           }
@@ -202,7 +219,7 @@ class MetaSyncService {
   }
   
   /**
-   * Save insight data to database
+   * Save insight data to database with proper deduplication
    */
   async saveInsightData(userId, adAccountId, insight) {
     // Extract actions data
@@ -215,42 +232,56 @@ class MetaSyncService {
     const purchaseValue = actionValues.find(a => a.action_type === 'purchase')?.value || '0';
     
     const date = insight.date_start;
-    const dateAccount = `${date}#${adAccountId}`;
     
-    const item = {
-      userId,
-      adAccountId,
-      date,
-      dateAccount,
+    try {
+      // Use the EXACT same structure as the existing data we saw in debug
+      // Each record gets its own unique userId (not composite key)
+      const recordUserId = userId; // Use the actual user ID
+      const dateAccount = `${date}#${adAccountId}`;
       
-      // Meta Ad Metrics
-      adSpend: parseFloat(insight.spend || 0),
-      impressions: parseInt(insight.impressions || 0),
-      reach: parseInt(insight.reach || 0),
-      linkClicks: parseInt(linkClicks),
-      cpc: parseFloat(insight.cpc || 0),
-      cpm: parseFloat(insight.cpm || 0),
-      ctr: parseFloat(insight.ctr || 0),
-      frequency: parseFloat(insight.frequency || 0),
+      // Create the item exactly like the existing structure
+      const item = {
+        userId: recordUserId,  // Simple userId as primary key
+        date,
+        adAccountId,
+        dateAccount,  // This field exists in existing data
+        
+        // Meta Ad Metrics (exact same fields as existing data)
+        adSpend: parseFloat(insight.spend || 0),
+        impressions: parseInt(insight.impressions || 0),
+        reach: parseInt(insight.reach || 0),
+        linkClicks: parseInt(linkClicks),
+        cpc: parseFloat(insight.cpc || 0),
+        cpm: parseFloat(insight.cpm || 0),
+        ctr: parseFloat(insight.ctr || 0),
+        frequency: parseFloat(insight.frequency || 0),
+        
+        // Conversion Metrics
+        metaPurchases: parseInt(purchases),
+        metaRevenue: parseFloat(purchaseValue),
+        
+        // Timestamps (exact same format as existing data)
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        
+        // Source
+        source: 'meta_api'
+      };
       
-      // Conversion Metrics
-      metaPurchases: parseInt(purchases),
-      metaRevenue: parseFloat(purchaseValue),
+      console.log(`   ✅ Creating Meta insight for ${date} (${adAccountId})`);
       
-      // Timestamps
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      const command = new PutCommand({
+        TableName: META_INSIGHTS_TABLE,
+        Item: item
+      });
       
-      // Source
-      source: 'meta_api'
-    };
-    
-    const command = new PutCommand({
-      TableName: META_INSIGHTS_TABLE,
-      Item: item
-    });
-    
-    await dynamoDB.send(command);
+      await dynamoDB.send(command);
+      
+    } catch (error) {
+      console.error(`Error saving Meta insight for ${date}:`, error.message);
+      console.error(`Full error:`, error);
+      // Don't throw - continue with other insights
+    }
   }
   
   /**

@@ -55,7 +55,7 @@ const getHistoricalMetrics = async (userId, months = 2) => {
     console.log(`📅 Date Range: ${startDateStr} to ${endDateStr}`);
     console.log(`👤 User ID: ${userId}`);
 
-    // Fetch Shopify orders - SAME as dashboard controller
+    // Fetch Shopify orders - SAME as dashboard controller (with pagination)
     const ordersParams = {
       TableName: process.env.SHOPIFY_ORDERS_TABLE || 'shopify_orders',
       KeyConditionExpression: 'userId = :userId',
@@ -66,8 +66,28 @@ const getHistoricalMetrics = async (userId, months = 2) => {
       ProjectionExpression: 'userId, orderId, totalPrice, subtotalPrice, createdAt, lineItems, customerId, customer, orderData, financialStatus, fulfillmentStatus'
     };
 
-    const ordersResult = await docClient.send(new QueryCommand(ordersParams));
-    const allOrders = ordersResult.Items || [];
+    // Fetch all orders with pagination (DynamoDB has 1MB limit per query)
+    let allOrders = [];
+    let lastEvaluatedKey = null;
+    
+    do {
+      const command = new QueryCommand({
+        ...ordersParams,
+        ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
+      });
+      
+      const result = await docClient.send(command);
+      allOrders = allOrders.concat(result.Items || []);
+      lastEvaluatedKey = result.LastEvaluatedKey;
+    } while (lastEvaluatedKey);
+    
+    console.log(`📦 Total orders in DB: ${allOrders.length}`);
+    
+    // Log sample order dates for debugging
+    if (allOrders.length > 0) {
+      const sampleDates = allOrders.slice(0, 5).map(o => o.createdAt?.split('T')[0] || 'NO_DATE');
+      console.log(`   Sample order dates: ${sampleDates.join(', ')}`);
+    }
     
     // Filter by date in JavaScript - SAME as dashboard controller
     const orders = allOrders.filter(order => {
@@ -78,7 +98,18 @@ const getHistoricalMetrics = async (userId, months = 2) => {
       return orderDate >= startDateStr && orderDate <= endDateStr;
     });
     
-    console.log(`📦 Orders Found: ${allOrders.length} total, ${orders.length} in date range`);
+    console.log(`📦 Orders Found: ${allOrders.length} total, ${orders.length} in date range (${startDateStr} to ${endDateStr})`);
+    
+    // If no orders in range, log the date range of available orders
+    if (orders.length === 0 && allOrders.length > 0) {
+      const orderDates = allOrders
+        .filter(o => o.createdAt)
+        .map(o => o.createdAt.split('T')[0])
+        .sort();
+      if (orderDates.length > 0) {
+        console.log(`⚠️  No orders in date range. Available order dates: ${orderDates[0]} to ${orderDates[orderDates.length - 1]}`);
+      }
+    }
 
     // Calculate monthly metrics - SAME logic as dashboard calculateSummary
     const monthlyMetrics = {};
@@ -258,11 +289,21 @@ const calculateGrowthRate = (values) => {
  */
 const generatePredictions = async (userId) => {
   try {
+    console.log(`\n🔮 ===== GENERATING PREDICTIONS FOR USER: ${userId} =====`);
+    
     const { monthlyMetrics, monthlyAdSpend } = await getHistoricalMetrics(userId, 2);
 
     const months = Object.keys(monthlyMetrics).sort();
+    
+    console.log(`📊 Monthly Metrics Keys: ${months.length > 0 ? months.join(', ') : 'NONE'}`);
+    
     if (months.length === 0) {
-      throw new Error('No historical data available for predictions');
+      console.log(`⚠️  No historical data found for user ${userId}`);
+      console.log(`   This could mean:`);
+      console.log(`   1. No orders in the last 2 months (Nov-Dec 2025)`);
+      console.log(`   2. All orders are cancelled/refunded`);
+      console.log(`   3. Shopify sync hasn't completed`);
+      throw new Error('No historical data available for predictions. Please ensure you have orders in the last 2 months.');
     }
 
     console.log(`\n🤖 ===== GENERATING PREDICTIONS =====`);

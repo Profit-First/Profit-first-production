@@ -9,6 +9,8 @@ const { DynamoDBDocumentClient, GetCommand, UpdateCommand } = require('@aws-sdk/
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
 
+const SHIPPING_CONNECTIONS_TABLE = process.env.SHIPPING_CONNECTIONS_TABLE || 'shipping_connections';
+
 /**
  * Get user profile
  * GET /api/user/profile
@@ -16,33 +18,62 @@ const docClient = DynamoDBDocumentClient.from(client);
 const getProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
+    const email = req.user.email; // From JWT token
+    console.log(`📋 Getting profile for user: ${userId} (${email})`);
 
-    // Get user from Users table
-    const userParams = {
-      TableName: process.env.DYNAMODB_TABLE_NAME || 'Users',
-      Key: { userId }
-    };
-
-    const userResult = await docClient.send(new GetCommand(userParams));
-
-    if (!userResult.Item) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Get onboarding data
+    // Get onboarding data (this contains user's settings)
     const onboardingParams = {
       TableName: process.env.ONBOARDING_TABLE_NAME || 'Onboarding',
       Key: { userId }
     };
 
     const onboardingResult = await docClient.send(new GetCommand(onboardingParams));
+    const onboarding = onboardingResult.Item || {};
+
+    // Get shipping connection data (for Shiprocket email)
+    let shippingConnection = null;
+    try {
+      const shippingParams = {
+        TableName: SHIPPING_CONNECTIONS_TABLE,
+        Key: { userId }
+      };
+      const shippingResult = await docClient.send(new GetCommand(shippingParams));
+      if (shippingResult.Item) {
+        shippingConnection = {
+          platform: shippingResult.Item.platform,
+          email: shippingResult.Item.email,
+          status: shippingResult.Item.status,
+          connectedAt: shippingResult.Item.connectedAt
+        };
+        console.log(`✅ Found shipping connection: ${shippingConnection.platform} - ${shippingConnection.email}`);
+      }
+    } catch (shippingError) {
+      console.log(`⚠️  Could not fetch shipping connection: ${shippingError.message}`);
+    }
+
+    // If we have shipping connection, use that email for step5
+    if (shippingConnection && shippingConnection.email) {
+      onboarding.step5 = {
+        ...(onboarding.step5 || {}),
+        shiproactId: shippingConnection.email,
+        shiproactPassword: '' // Don't expose password
+      };
+    }
+
+    // Extract name from onboarding step1 or use email
+    const step1 = onboarding.step1 || {};
+    const firstName = step1.firstName || step1.name || '';
+    const lastName = step1.lastName || '';
+
+    console.log(`✅ Profile loaded successfully`);
 
     res.json({
-      userId: userResult.Item.userId,
-      email: userResult.Item.email,
-      firstName: userResult.Item.firstName || '',
-      lastName: userResult.Item.lastName || '',
-      onboarding: onboardingResult.Item || {}
+      userId: userId,
+      email: email,
+      firstName: firstName,
+      lastName: lastName,
+      onboarding: onboarding,
+      shippingConnection: shippingConnection
     });
   } catch (error) {
     console.error('Get profile error:', error);

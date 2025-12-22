@@ -240,8 +240,22 @@ const fetchRelevantData = async (userId, intent) => {
           }
         };
 
-        const ordersResult = await docClient.send(new QueryCommand(ordersParams));
-        const allOrders = ordersResult.Items || [];
+        // Fetch all orders with pagination (DynamoDB has 1MB limit per query)
+        let allOrders = [];
+        let lastEvaluatedKey = null;
+        
+        do {
+          const command = new QueryCommand({
+            ...ordersParams,
+            ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
+          });
+          
+          const result = await docClient.send(command);
+          allOrders = allOrders.concat(result.Items || []);
+          lastEvaluatedKey = result.LastEvaluatedKey;
+        } while (lastEvaluatedKey);
+        
+        console.log(`📦 Chatbot: Total orders in DB: ${allOrders.length}`);
         
         // Filter by date in JavaScript (same as dashboard)
         data.orders = allOrders.filter(order => {
@@ -260,7 +274,18 @@ const fetchRelevantData = async (userId, intent) => {
           return !(financialStatus === 'refunded' || financialStatus === 'voided' || financialStatus === 'cancelled');
         });
         
-        console.log(`📦 Chatbot: Found ${allOrders.length} total orders, ${data.orders.length} in timeframe`);
+        console.log(`📦 Chatbot: Found ${allOrders.length} total orders, ${data.orders.length} in timeframe (${intent.timeframe})`);
+        
+        // Log date range for debugging
+        if (data.orders.length === 0 && allOrders.length > 0) {
+          const orderDates = allOrders
+            .filter(o => o.createdAt)
+            .map(o => new Date(o.createdAt).toISOString().split('T')[0])
+            .sort();
+          if (orderDates.length > 0) {
+            console.log(`⚠️  Chatbot: No orders in timeframe. Available: ${orderDates[0]} to ${orderDates[orderDates.length - 1]}`);
+          }
+        }
         
         // Calculate summary (use subtotalPrice like dashboard for accurate revenue)
         const totalRevenue = data.orders.reduce((sum, o) => {
