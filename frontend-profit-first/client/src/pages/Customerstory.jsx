@@ -135,7 +135,7 @@ const Customerstory = () => {
     <>
       <section
         id="CUSTOMERSTORIES"
-        className="py-32 px-12 md:px-12 text-white overflow-x-hidden bg-[#101218]"
+        className="py-32 px-12 md:px-12 text-white overflow-x-hidden bg-[#101218] h-[100dvh]"
       >
         <div className="max-w-7xl mx-auto">
           <button
@@ -217,7 +217,7 @@ const Customerstory = () => {
                   {selectedStory.title}
                 </h2>
                 <div
-                  className="leading-relaxed text-gray-300 prose prose-invert max-w-none"
+                  className="leading-relaxed text-gray-300 prose prose-invert max-w-none [&_*]:!bg-transparent"
                   dangerouslySetInnerHTML={{ __html: selectedStory.content }}
                 />
               </div>

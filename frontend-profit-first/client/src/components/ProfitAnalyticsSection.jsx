@@ -1,34 +1,33 @@
 import React from "react";
+import chatbotImage from "../assets/CHATBOT AI.jpg";
+import aiGrowthImage from "../assets/AI GROWTH.jpg";
+import aiAdsImage from "../assets/AI ADS.jpg";
+import aiAgentImage from "../assets/AI AGENT.jpg";
+
 const analyticsData = [
   {
-    title: "Gross Profit",
+    title: "AI Chatbot",
     description:
-      "Whether you’re a manufacturer or trader, you need to know your gross profit. Say goodbye to pen and paper and welcome Profit First—just mention your COGS once and get gross margin insights on your dashboard every time.",
-    icon: "https://res.cloudinary.com/dqdvr35aj/image/upload/v1748329717/Gross_acfnws.png",
+      "Get instant answers to your business questions with our AI-powered chatbot. Ask about revenue trends, profit margins, or marketing performance and receive data-driven insights in seconds. No more digging through dashboards or complex reports.",
+    icon: chatbotImage,
   },
   {
-    title: "Net Profit",
+    title: "AI Growth",
     description:
-      "Getting excellent ROAS but still not making a profit? Use our Net Margin Calculator for real-time clarity on whether you’re earning or just burning.",
-    icon: "https://res.cloudinary.com/dqdvr35aj/image/upload/v1748329770/Sales_lej4of.png",
+      "Unlock predictive insights powered by AI to forecast revenue, identify growth opportunities, and optimize your business strategy. Make data-driven decisions with confidence and stay ahead of market trends.",
+    icon: aiGrowthImage,
   },
   {
-    title: "Cohort Analysis",
+    title: "AI Ads",
     description:
-      "From customer LTV to product LTV, Profit First's cohort dashboard delivers powerful insights to help guide future strategy.",
-    icon: "https://res.cloudinary.com/dqdvr35aj/image/upload/v1748329618/CohortGraph_gapj2t.png",
+      "Optimize your advertising campaigns with AI-powered insights. Analyze ad performance, identify winning creatives, and maximize ROI across all your marketing channels. Get real-time recommendations to improve your ad spend efficiency.",
+    icon: aiAdsImage,
   },
   {
-    title: "Marketing",
+    title: "AI Agent",
     description:
-      "No need to constantly check Ads Manager. View CTR, ROAS, and campaign insights right from your Profit First marketing dashboard.",
-    icon: "https://res.cloudinary.com/dqdvr35aj/image/upload/v1748329822/MarketingGraph_nbz1c9.png",
-  },
-  {
-    title: "Shipping",
-    description:
-      "Track RTOs, delivered and in-transit orders all in one place. The shipping dashboard keeps you informed with key logistics data.",
-    icon: "https://res.cloudinary.com/dqdvr35aj/image/upload/v1748329772/ShippingGraph_rynbmp.png",
+      "Automate customer interactions with intelligent AI calling agents. Confirm orders instantly and recover abandoned carts through personalized voice calls. Reduce manual workload while improving conversion rates and customer satisfaction with 24/7 automated calling.",
+    icon: aiAgentImage,
   },
 ];
 
@@ -41,9 +40,7 @@ const ProfitAnalyticsSection = () => {
           <span className="my-gradient-text font-bold">every time</span>
         </h2>
         <p className="text-white mb-10 max-w-2xl mx-auto text-base sm:text-lg">
-          D2C brand owners used to check multiple platforms for insights—
-          <br className="hidden sm:block" />
-          but not anymore.
+          D2C brand owners used to check multiple platforms for insights but not anymore.
         </p>
       </div>
 
@@ -53,10 +50,10 @@ const ProfitAnalyticsSection = () => {
             <div key={index} className="grid lg:grid-cols-2 gap-10 items-center">
               {/* Text Content */}
               <div className={`${index % 2 !== 0 ? "lg:order-2" : ""}`}>
-                <span className="text-[#13ef96] text-sm uppercase tracking-wide">
+                {/* <span className="text-[#13ef96] text-sm uppercase tracking-wide">
                   {item.title}
-                </span>
-                <h3 className="text-2xl sm:text-3xl font-bold mb-2">{item.title}</h3>
+                </span> */}
+                <h3 className="text-2xl sm:text-3xl font-bold mb-2 my-gradient-text">{item.title}</h3>
                 <p className="text-gray-400 text-base">{item.description}</p>
               </div>
 

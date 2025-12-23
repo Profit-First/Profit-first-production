@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useNavigate } from "react-router-dom";
 import { PulseLoader } from "react-spinners";
@@ -535,19 +535,6 @@ const SignUp = () => {
       `}</style>
       <div className="bg-blob blob-left"></div>
       <div className="bg-blob blob-right"></div>
-      <ToastContainer 
-        position="top-right" 
-        autoClose={5000}
-        hideProgressBar={false}
-        newestOnTop={true}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-        style={{ zIndex: 9999 }}
-      />
 
       <div className="relative z-10 w-full max-w-sm mx-4 auth-card-enter">
         <div className="bg-[#1E1E1E] rounded-2xl p-6 shadow-lg">

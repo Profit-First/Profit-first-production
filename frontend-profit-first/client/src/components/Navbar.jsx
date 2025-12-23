@@ -6,8 +6,10 @@ const Navbar = () => {
   const [lastScrollY, setLastScrollY] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [solutionsOpen, setSolutionsOpen] = useState(false);
+  const [resourcesOpen, setResourcesOpen] = useState(false);
   const [activeSolutionIndex, setActiveSolutionIndex] = useState(null);
   const [mobileSolutionsOpen, setMobileSolutionsOpen] = useState(false);
+  const [mobileResourcesOpen, setMobileResourcesOpen] = useState(false);
 
   const solutions = [
     {
@@ -120,65 +122,102 @@ const Navbar = () => {
             <div
               role="menu"
               className={[
-                "absolute left-2/2 -translate-x-1/3 top-full mt-3 rounded-2xl shadow-xl p-4 z-[60]",
-                "bg-black/30 backdrop-blur-xl",
-                "w-[1000px] max-w-[95vw]",
+                "absolute left-2/2 -translate-x-1/3 top-full pt-3 z-[60]",
                 "transition-all duration-200",
                 solutionsOpen
                   ? "opacity-100 visible translate-y-0 pointer-events-auto"
                   : "opacity-0 invisible -translate-y-1 pointer-events-none",
               ].join(" ")}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {solutions.map((s, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-xl hover:bg-white/5 transition-colors duration-300 p-3 bg-[#2e2d2d]"
-                  >
-                    <button
-                      role="menuitem"
-                      onClick={() => handleSolutionClick(idx)}
-                      className="w-full text-left focus:outline-none"
+              <div className="rounded-2xl shadow-xl p-4 bg-black/30 backdrop-blur-xl w-[1000px] max-w-[95vw]">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {solutions.map((s, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-xl hover:bg-white/5 transition-colors duration-300 p-3 bg-[#2e2d2d]"
                     >
-                      <div className="font-medium text-white">{s.title}</div>
-
-                      <div
-                        className={`grid transition-all duration-500 ease-in-out ${
-                          activeSolutionIndex === idx
-                            ? "grid-rows-[1fr] opacity-100 pt-2"
-                            : "grid-rows-[0fr] opacity-0"
-                        }`}
+                      <button
+                        role="menuitem"
+                        onClick={() => handleSolutionClick(idx)}
+                        className="w-full text-left focus:outline-none"
                       >
-                        <div className="overflow-hidden">
-                          <div className="text-sm text-gray-300">{s.desc}</div>
+                        <div className="font-medium text-white">{s.title}</div>
+
+                        <div
+                          className={`grid transition-all duration-500 ease-in-out ${
+                            activeSolutionIndex === idx
+                              ? "grid-rows-[1fr] opacity-100 pt-2"
+                              : "grid-rows-[0fr] opacity-0"
+                          }`}
+                        >
+                          <div className="overflow-hidden">
+                            <div className="text-sm text-gray-300">{s.desc}</div>
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                  </div>
-                ))}
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </li>
 
-          <li>
-            <a href="#DASHBOARD" className="hover:text-green-500">
+          <li
+            className="relative"
+            onMouseEnter={() => setResourcesOpen(true)}
+            onMouseLeave={() => setResourcesOpen(false)}
+          >
+            <button
+              className="hover:text-green-500 flex items-center gap-1"
+              aria-haspopup="true"
+              aria-expanded={resourcesOpen}
+            >
               Resources
-            </a>
-          </li>
-          <li>
-            <a href="#USECASES" className="hover:text-green-500">
-              Use Cases
-            </a>
-          </li>
-          <li>
-            <a href="#BLOG" className="hover:text-green-500">
-              Blog
-            </a>
-          </li>
-          <li>
-            <Link to="/ourstorys" className="hover:text-green-500">
-              Customers Stories
-            </Link>
+              <svg
+                className={`w-4 h-4 transition-transform ${resourcesOpen ? "rotate-180" : ""}`}
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
+
+            <div
+              role="menu"
+              className={[
+                "absolute left-1/2 -translate-x-1/2 top-full pt-3 z-[60]",
+                "transition-all duration-200",
+                resourcesOpen
+                  ? "opacity-100 visible translate-y-0 pointer-events-auto"
+                  : "opacity-0 invisible -translate-y-1 pointer-events-none",
+              ].join(" ")}
+            >
+              <div className="rounded-xl shadow-xl p-2 bg-black/30 backdrop-blur-xl w-48">
+                <a
+                  href="#USECASES"
+                  className="block px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  Use Cases
+                </a>
+                <a
+                  href="#BLOG"
+                  className="block px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  Blog
+                </a>
+                <Link
+                  to="/ourstorys"
+                  className="block px-4 py-2 text-white hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  Customer Stories
+                </Link>
+              </div>
+            </div>
           </li>
           <li>
             <Link to="/Profitcalculater" className="hover:text-green-500">
@@ -294,41 +333,59 @@ const Navbar = () => {
                 </ul>
               )}
             </li>
-            <li>
-              <a
-                href="#DASHBOARD"
-                onClick={() => setDrawerOpen(false)}
-                className="hover:text-green-500"
+            <li className="border-t border-white/10 pt-4">
+              <button
+                className="w-full flex items-center justify-between hover:text-green-500"
+                onClick={() => setMobileResourcesOpen((v) => !v)}
+                aria-expanded={mobileResourcesOpen}
+                aria-controls="mobile-resources"
               >
-                Resources
-              </a>
-            </li>
-            <li>
-              <a
-                href="#USECASES"
-                onClick={() => setDrawerOpen(false)}
-                className="hover:text-green-500"
-              >
-                Use Cases
-              </a>
-            </li>
-            <li>
-              <a
-                href="#BLOG"
-                onClick={() => setDrawerOpen(false)}
-                className="hover:text-green-500"
-              >
-                Blog
-              </a>
-            </li>
-            <li>
-              <Link
-                to="/ourstorys"
-                onClick={() => setDrawerOpen(false)}
-                className="hover:text-green-500"
-              >
-                Customers Stories
-              </Link>
+                <span>Resources</span>
+                <svg
+                  className={`w-4 h-4 transition-transform ${
+                    mobileResourcesOpen ? "rotate-180" : ""
+                  }`}
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+              {mobileResourcesOpen && (
+                <ul id="mobile-resources" className="mt-3 space-y-2 pl-4">
+                  <li>
+                    <a
+                      href="#USECASES"
+                      onClick={() => setDrawerOpen(false)}
+                      className="block py-1 hover:text-green-500"
+                    >
+                      Use Cases
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="#BLOG"
+                      onClick={() => setDrawerOpen(false)}
+                      className="block py-1 hover:text-green-500"
+                    >
+                      Blog
+                    </a>
+                  </li>
+                  <li>
+                    <Link
+                      to="/ourstorys"
+                      onClick={() => setDrawerOpen(false)}
+                      className="block py-1 hover:text-green-500"
+                    >
+                      Customer Stories
+                    </Link>
+                  </li>
+                </ul>
+              )}
             </li>
             <li>
               <Link to="/Profitcalculater" className="hover:text-green-500">

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { FiArrowLeft, FiEye, FiEyeOff } from "react-icons/fi";
 import { forgotPassword, verifyResetOTP, resendResetOTP, resetPassword } from "../services/authService";
@@ -390,16 +390,6 @@ const ForgotPassword = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#101218] text-white relative overflow-hidden p-4">
-      <ToastContainer 
-        position="top-right" 
-        autoClose={5000}
-        hideProgressBar={false}
-        newestOnTop={true}
-        closeOnClick
-        pauseOnHover
-        theme="dark"
-        style={{ zIndex: 9999 }}
-      />
       <style>{`
         .bg-blob {
           position: absolute;

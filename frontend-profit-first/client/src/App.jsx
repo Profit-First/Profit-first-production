@@ -175,13 +175,12 @@ function AppWrapper() {
         newestOnTop={true}
         closeOnClick={true}
         rtl={false}
-        pauseOnFocusLoss={true}
+        pauseOnFocusLoss={false}
         draggable={true}
         pauseOnHover={true}
         theme="dark"
         closeButton={true}
         limit={3}
-        transition={undefined}
         style={{ 
           zIndex: 99999,
           top: '20px',

@@ -5,7 +5,7 @@
  */
 
 const onboardingService = require('../services/onboarding.service');
-const shopifySyncService = require('../services/shopify-sync.service');
+const shopifySyncService = require('../services/shopify-sync-improved.service');
 const { getCache, setCache, deleteCache } = require('../config/redis.config');
 
 class OnboardingController {

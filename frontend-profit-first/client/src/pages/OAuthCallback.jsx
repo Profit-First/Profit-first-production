@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { PulseLoader } from "react-spinners";
 import { storeTokens, storeUserData } from "../services/authService";
@@ -112,8 +112,6 @@ const OAuthCallback = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#101218] text-white">
-      <ToastContainer position="top-right" autoClose={3000} />
-
       <div className="text-center">
         {status === "processing" && (
           <>

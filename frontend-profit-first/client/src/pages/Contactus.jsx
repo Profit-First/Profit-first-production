@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import axiosInstance from "../../axios";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { PulseLoader } from "react-spinners";
 
@@ -78,8 +78,6 @@ const Contactus = () => {
 
   return (
     <div className="relative min-h-screen bg-[#101218] flex flex-col">
-      <ToastContainer position="top-right" autoClose={3000} />
-
       <button
         onClick={handleBack}
         className="absolute top-4 left-4 z-10 px-4 py-2 rounded-full transition text-white"

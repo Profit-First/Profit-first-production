@@ -35,7 +35,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast from "../utils/toast";
-import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { FiArrowLeft, FiEye, FiEyeOff } from "react-icons/fi";
 import { login, storeTokens, storeUserData } from "../services/authService";
@@ -290,19 +289,6 @@ const Login = () => {
       `}</style>
       <div className="bg-blob blob-left"></div>
       <div className="bg-blob blob-right"></div>
-
-      <ToastContainer 
-        position="top-right" 
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop={true}
-        closeOnClick={true}
-        rtl={false}
-        pauseOnFocusLoss={false}
-        draggable={true}
-        pauseOnHover={false}
-        theme="dark"
-      />
 
       {/* Card */}
       <div className="relative z-10 w-full max-w-sm mx-4 auth-card-enter">

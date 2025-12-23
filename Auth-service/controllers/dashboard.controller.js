@@ -113,7 +113,7 @@ async function getDashboardData(req, res) {
     console.log(`   Date range: ${startDate} to ${endDate}`);
 
     // Check Shopify sync status first
-    const shopifySyncService = require('../services/shopify-sync.service');
+    const shopifySyncService = require('../services/shopify-sync-improved.service');
     const syncStatus = shopifySyncService.getSyncStatus(userId);
     
     // If sync is in progress, return sync status instead of incomplete data
@@ -212,7 +212,7 @@ async function getDashboardData(req, res) {
       Promise.resolve(calculateMarketingMetrics(metaInsights, shopifyOrders)),
       Promise.resolve(calculateMarketingChart(metaInsights, startDate, endDate)),
       Promise.resolve(calculateCustomerTypeData(shopifyOrders, startDate, endDate)),
-      Promise.resolve(calculateWebsiteMetrics(shopifyOrders)),
+      Promise.resolve(calculateWebsiteMetrics(shopifyOrders, shopifyCustomers, metaInsights, shiprocketShipments, onboardingData)),
       Promise.resolve(calculateProductRankings(shopifyOrders, shopifyProducts)),
       Promise.resolve(calculateShippingMetrics(shiprocketShipments, shopifyOrders)),
       Promise.resolve(calculateOrderTypeData(shopifyOrders))
@@ -947,21 +947,95 @@ function calculateCustomerTypeData(orders, startDate, endDate) {
   return data;
 }
 
-function calculateWebsiteMetrics(orders) {
-  // Count only valid orders (exclude cancelled, refunded, voided)
+function calculateWebsiteMetrics(orders, customers, metaInsights, shiprocketShipments, onboardingData) {
+  // Filter valid orders (exclude cancelled, refunded, voided)
   const validOrders = orders.filter(order => {
     const financialStatus = (order.financialStatus || '').toLowerCase();
     return !(financialStatus === 'refunded' || financialStatus === 'voided' || financialStatus === 'cancelled');
+  });
+  
+  // 1. Total Customers - Unique customers from orders
+  const uniqueCustomers = new Set();
+  orders.forEach(order => {
+    const customerId = order.customerId || order.customer?.id || order.orderData?.customer?.id;
+    if (customerId) {
+      uniqueCustomers.add(customerId.toString());
+    }
+  });
+  const totalCustomers = uniqueCustomers.size;
+  
+  // 2. Orders Today - Orders created today
+  const today = new Date().toISOString().split('T')[0];
+  const ordersToday = validOrders.filter(order => {
+    const orderDate = order.createdAt?.split('T')[0];
+    return orderDate === today;
   }).length;
   
-  const sessions = validOrders * 3; // Rough estimate
-  const conversionRate = validOrders > 0 ? (validOrders / sessions) * 100 : 0;
+  // 3. Profit per Order - Calculate net profit per order
+  // Get product costs
+  const productMap = new Map();
+  if (onboardingData?.step3?.productCosts) {
+    onboardingData.step3.productCosts.forEach(p => {
+      if (p.productId) {
+        productMap.set(p.productId.toString(), parseFloat(p.cost) || 0);
+      }
+    });
+  }
+  
+  // Calculate total revenue and costs
+  let revenue = 0;
+  let cogs = 0;
+  
+  validOrders.forEach(order => {
+    revenue += parseFloat(order.totalPrice || order.subtotalPrice || 0);
+    
+    (order.lineItems || []).forEach(item => {
+      const productId = item.product_id?.toString();
+      const unitCost = productMap.get(productId) || 0;
+      const quantity = item.quantity || 0;
+      cogs += unitCost * quantity;
+    });
+  });
+  
+  const adSpend = metaInsights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
+  
+  let shippingCost = shiprocketShipments.reduce((sum, shipment) => 
+    sum + (parseFloat(shipment.totalCharges) || 0), 0
+  );
+  
+  if (shippingCost === 0 && validOrders.length > 0) {
+    shippingCost = validOrders.length * 70; // Estimate
+  }
+  
+  const netProfit = revenue - (cogs + adSpend + shippingCost);
+  const profitPerOrder = validOrders.length > 0 ? netProfit / validOrders.length : 0;
+  
+  // 4. Prepaid Orders - Orders with paid financial status
+  const prepaidOrders = validOrders.filter(o => 
+    (o.financialStatus || '').toLowerCase() === 'paid'
+  ).length;
 
   return [
-    { title: 'Sessions', value: sessions.toLocaleString('en-IN'), formula: 'Total website sessions' },
-    { title: 'Conversion Rate', value: `${conversionRate.toFixed(2)}%`, formula: '(Orders / Sessions) × 100' },
-    { title: 'Bounce Rate', value: '45%', formula: 'Single page sessions' },
-    { title: 'Avg Session Duration', value: '3m 24s', formula: 'Average time on site' }
+    { 
+      title: 'Total Customers', 
+      value: totalCustomers.toLocaleString('en-IN'), 
+      formula: 'Unique customers from orders' 
+    },
+    { 
+      title: 'Orders Today', 
+      value: ordersToday.toLocaleString('en-IN'), 
+      formula: 'Orders placed today' 
+    },
+    { 
+      title: 'Profit per Order', 
+      value: `₹${Math.round(profitPerOrder).toLocaleString('en-IN')}`, 
+      formula: 'Net Profit ÷ Total Orders' 
+    },
+    { 
+      title: 'Prepaid Orders', 
+      value: prepaidOrders.toLocaleString('en-IN'), 
+      formula: 'Orders with paid status' 
+    }
   ];
 }
 
@@ -1163,7 +1237,7 @@ async function getSyncStatus(req, res) {
   try {
     const userId = req.user.userId;
     
-    const shopifySyncService = require('../services/shopify-sync.service');
+    const shopifySyncService = require('../services/shopify-sync-improved.service');
     const syncStatus = shopifySyncService.getSyncStatus(userId);
     
     // Also check connection status

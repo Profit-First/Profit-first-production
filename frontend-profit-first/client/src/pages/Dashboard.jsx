@@ -576,7 +576,7 @@ const Dashboard = () => {
       </div>
 
       <div className="pb-6">
-        <h2 className="text-2xl font-bold mb-4 pt-6">🛍 Website Overview</h2>
+        <h2 className="text-2xl font-bold mb-4 pt-6">📊 Business Insights</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
           {websiteOverview.map(({ title, value, formula }) => (
             <Card key={title} title={title} value={value} formula={formula} />

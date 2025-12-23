@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useParams, useNavigate, Link } from "react-router-dom";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { verifyOTP, resendOTP } from "../services/authService";
 import axiosInstance from "../../axios";
@@ -220,7 +220,6 @@ const VerifyEmail = () => {
           }
         }
       `}</style>
-      <ToastContainer position="top-right" autoClose={3000} theme="dark" />
       
       <div className="bg-[#0f1e1c] rounded-3xl p-10 text-center shadow-lg max-w-md w-full mx-4 auth-card-enter">
         <img src="https://res.cloudinary.com/dqdvr35aj/image/upload/v1748330108/Logo1_zbbbz4.png" alt="Logo" className="mx-auto h-48 mb-6" />

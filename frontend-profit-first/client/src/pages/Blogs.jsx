@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { PulseLoader } from "react-spinners";
 import axiosInstance from "../../axios";
-import { toast, ToastContainer } from "react-toastify";
+import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useNavigate } from "react-router-dom";
 
@@ -371,14 +371,13 @@ const Blogs = () => {
   // }
 
   return (
-    <section className="py-12 px-2 md:px-12 text-white bg-[#101218]">
+    <section className="py-12 px-2 md:px-12 text-white bg-[#101218] h-[100dvh]">
       <button
         onClick={() => navigate("/")}
         className="absolute top-6 left-6 text-gray-300 bg-transparent border-none text-lg font-semibold hover:text-white"
       >
         &#8592; Back
       </button>
-      <ToastContainer />
       <div className="container mx-auto px-4">
         <h2 className="text-4xl font-bold md:text-4xl text-center mb-4">
           Stay Connected on our
@@ -450,7 +449,7 @@ const Blogs = () => {
 
               <h2 className="text-2xl font-bold">{selectedBlog.title}</h2>
               <div
-                className="leading-relaxed text-gray-300 prose prose-invert max-w-none"
+                className="leading-relaxed text-gray-300 prose prose-invert max-w-none [&_*]:!bg-transparent"
                 dangerouslySetInnerHTML={{ __html: selectedBlog.content }}
               ></div>
             </div>

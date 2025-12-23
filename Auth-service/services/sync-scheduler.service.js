@@ -7,7 +7,7 @@
 
 const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { dynamoDB } = require('../config/aws.config');
-const shopifySyncService = require('./shopify-sync.service');
+const shopifySyncService = require('./shopify-sync-improved.service');
 const metaSyncService = require('./meta-sync.service');
 const shiprocketSyncService = require('./shiprocket-sync.service');
 
