@@ -297,9 +297,11 @@ class ImprovedShopifySyncService {
           
           url = nextUrl;
           
-          // STEP 4: Wait 2 minutes before next fetch (rate limiting)
+          // STEP 4: Wait before next fetch (rate limiting)
+          // Shopify rate limit: 2 calls/second, but we use 2-minute delays to be extra safe
           if (url) {
-            const delay = syncType === 'daily' ? 30000 : 120000; // 30s for daily, 2min for initial/manual
+            // Use 2-minute delay for all sync types to avoid any rate limit issues
+            const delay = 120000; // 2 minutes for initial, daily, and manual sync
             console.log(`   ⏳ Waiting ${delay / 1000} seconds before fetching next page...`);
             
             if (progressCallback) {

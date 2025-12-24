@@ -62,21 +62,44 @@ class OnboardingController {
       console.log(`🗑️  Cache invalidated: ${cacheKey}`);
 
       // Trigger initial Shopify sync after Step 2 (Shopify connection completed)
-      if (step === 2 && data.storeUrl && data.accessToken) {
-        console.log(`\n🚀 Step 2 completed - Triggering initial Shopify sync...`);
+      if (step === 2 && data.storeUrl && data.connected) {
+        console.log(`\n🚀 Step 2 completed - Triggering initial Shopify sync in background...`);
         
-        // Run sync in background (don't wait for it)
-        shopifySyncService.initialSync(userId, data.storeUrl, data.accessToken)
-          .then(syncResult => {
+        // Run sync in background using setImmediate to not block response
+        setImmediate(async () => {
+          try {
+            // Get access token from database
+            const { GetCommand } = require('@aws-sdk/lib-dynamodb');
+            const { dynamoDB } = require('../config/aws.config');
+            
+            const connectionCommand = new GetCommand({
+              TableName: process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_connections',
+              Key: { userId }
+            });
+            
+            const connectionResult = await dynamoDB.send(connectionCommand);
+            
+            if (!connectionResult.Item || !connectionResult.Item.accessToken) {
+              console.error(`❌ No Shopify connection found for initial sync`);
+              return;
+            }
+            
+            const { shopUrl, accessToken } = connectionResult.Item;
+            console.log(`   Starting sync for shop: ${shopUrl}`);
+            
+            const syncResult = await shopifySyncService.initialSync(userId, shopUrl, accessToken);
+            
             if (syncResult.success) {
-              console.log(`✅ Initial sync completed for user: ${userId}`);
+              console.log(`✅ Initial sync completed for user: ${userId} - ${syncResult.data.orders} orders synced`);
             } else {
               console.error(`❌ Initial sync failed for user: ${userId}`, syncResult.error);
             }
-          })
-          .catch(error => {
+          } catch (error) {
             console.error(`❌ Initial sync error for user: ${userId}`, error.message);
-          });
+          }
+        });
+        
+        console.log(`✅ Initial sync started in background - user can proceed`);
       }
 
       res.status(200).json({

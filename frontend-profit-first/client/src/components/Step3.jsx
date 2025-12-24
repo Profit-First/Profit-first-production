@@ -38,26 +38,9 @@ const Step3 = ({ onComplete }) => {
       }
     };
 
-    const startBackgroundSync = async () => {
-      try {
-        console.log("🔄 Starting background sync of orders and customers...");
-        // Trigger background sync (don't wait for it)
-        axiosInstance.post("/onboard/background-sync")
-          .then(() => {
-            console.log("✅ Background sync completed");
-            toast.success("📊 Data synced in background", { autoClose: 2000 });
-          })
-          .catch(err => {
-            console.error("Background sync error:", err);
-            // Don't show error to user - it's background process
-          });
-      } catch (err) {
-        console.error("Failed to start background sync:", err);
-      }
-    };
-
     fetchProducts();
-    startBackgroundSync(); // Start syncing while user enters costs
+    // Note: Initial sync is already running in background from Step 2
+    // No need to trigger another sync here
   }, []);
 
   const handleChange = (productId, value) => {
