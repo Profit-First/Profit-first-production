@@ -7,9 +7,8 @@
 
 const { ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { dynamoDB } = require('../config/aws.config');
-const shopifySyncService = require('./shopify-sync-improved.service');
+const shopifyBackgroundSync = require('./shopify-background-sync.service');
 const metaSyncService = require('./meta-sync.service');
-const shiprocketSyncService = require('./shiprocket-sync.service');
 
 const SHOPIFY_CONNECTIONS_TABLE = process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_connections';
 const META_CONNECTIONS_TABLE = process.env.META_CONNECTIONS_TABLE || 'meta_connections';
@@ -94,7 +93,7 @@ class SyncSchedulerService {
       if (shopifyConnections.length > 0) {
         console.log('🛍️  SHOPIFY SYNC\n');
         for (const connection of shopifyConnections) {
-          const result = await shopifySyncService.dailySync(connection.userId);
+          const result = await shopifyBackgroundSync.dailySync(connection.userId);
           results.shopify.push({
             userId: connection.userId,
             shopUrl: connection.shopUrl,
@@ -118,19 +117,8 @@ class SyncSchedulerService {
         }
       }
       
-      // Sync Shiprocket data
-      if (shiprocketConnections.length > 0) {
-        console.log('\n🚚 SHIPROCKET SYNC\n');
-        for (const connection of shiprocketConnections) {
-          const result = await shiprocketSyncService.dailySync(connection.userId);
-          results.shiprocket.push({
-            userId: connection.userId,
-            platform: connection.platform,
-            ...result
-          });
-          await this.sleep(1000);
-        }
-      }
+      // Shiprocket sync disabled - using direct API calls in dashboard
+      console.log('\n🚚 SHIPROCKET SYNC - SKIPPED (using direct API calls)\n');
       
       // Summary
       console.log(`\n${'='.repeat(60)}`);
@@ -215,7 +203,7 @@ class SyncSchedulerService {
    */
   async triggerManualSync(userId) {
     console.log(`\n🔧 Manual sync triggered for user: ${userId}\n`);
-    return await shopifySyncService.dailySync(userId);
+    return await shopifyBackgroundSync.dailySync(userId);
   }
 }
 

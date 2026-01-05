@@ -19,38 +19,138 @@ async function connectShiprocket(email, password) {
   }
 
   console.log(`   📧 Authenticating with Shiprocket...`);
+  console.log(`   📧 Email: ${email}`);
 
-  try {
-    const response = await axios.post(
-      'https://apiv2.shiprocket.in/v1/external/auth/login',
-      { email, password },
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-
-    if (!response.data.token) {
-      throw new Error('Failed to get Shiprocket token');
+  // Try multiple approaches as Shiprocket API can be finicky
+  const attempts = [
+    {
+      name: 'Standard Request',
+      config: {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      }
+    },
+    {
+      name: 'Postman-like Request',
+      config: {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'PostmanRuntime/7.28.4',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive'
+        }
+      }
+    },
+    {
+      name: 'Mobile User Agent',
+      config: {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1'
+        }
+      }
     }
+  ];
 
-    console.log(`   ✅ Shiprocket authenticated`);
+  for (const attempt of attempts) {
+    try {
+      console.log(`   🔄 Trying: ${attempt.name}`);
+      
+      const response = await axios.post(
+        'https://apiv2.shiprocket.in/v1/external/auth/login',
+        { 
+          email: email.trim(), 
+          password: password 
+        },
+        { 
+          ...attempt.config,
+          timeout: 30000,
+          validateStatus: function (status) {
+            return status < 500; // Accept any status less than 500
+          }
+        }
+      );
 
-    return {
-      token: response.data.token,
-      email: email,
-      password: password, // Store for token refresh
-      company_id: response.data.company_id,
-      first_name: response.data.first_name,
-      last_name: response.data.last_name,
-      expiresAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString() // 10 days
-    };
-  } catch (error) {
-    if (error.response?.status === 403) {
-      console.log(`   ❌ Shiprocket returned 403 Forbidden`);
-      throw new Error('Shiprocket authentication failed (403 Forbidden). Please verify: 1) Your email and password are correct, 2) You can log into app.shiprocket.in with these credentials, 3) API access is enabled in your Shiprocket account');
+      console.log(`   📊 ${attempt.name} - Status: ${response.status}`);
+      console.log(`   📊 Content-Type: ${response.headers['content-type']}`);
+      
+      // Check if we got HTML instead of JSON
+      if (response.headers['content-type']?.includes('text/html')) {
+        console.log(`   ❌ ${attempt.name} - Got HTML response, trying next approach...`);
+        continue;
+      }
+
+      // Check for successful response
+      if (response.status === 200 && response.data && response.data.token) {
+        console.log(`   ✅ ${attempt.name} - Success!`);
+        console.log(`   👤 User: ${response.data.first_name} ${response.data.last_name}`);
+        console.log(`   🏢 Company ID: ${response.data.company_id}`);
+
+        return {
+          token: response.data.token,
+          email: email.trim(),
+          password: password,
+          company_id: response.data.company_id,
+          first_name: response.data.first_name,
+          last_name: response.data.last_name,
+          expiresAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString()
+        };
+      }
+
+      // Handle specific error responses
+      if (response.status === 401) {
+        throw new Error(`Invalid Shiprocket credentials. Please check your email and password. Email: ${email}`);
+      }
+      
+      if (response.status === 403 && response.data && typeof response.data === 'object') {
+        throw new Error(`Shiprocket authentication failed (403). Please check:
+1. Email and password are correct
+2. Account is active on app.shiprocket.in
+3. API access is enabled in account settings
+Email: ${email}`);
+      }
+      
+      console.log(`   ⚠️  ${attempt.name} - Status ${response.status}, trying next approach...`);
+      
+    } catch (error) {
+      console.log(`   ❌ ${attempt.name} failed:`, error.message);
+      
+      // If this is the last attempt, throw the error
+      if (attempt === attempts[attempts.length - 1]) {
+        // Handle network errors
+        if (error.code === 'ECONNREFUSED') {
+          throw new Error('Cannot connect to Shiprocket API - connection refused. Please check your internet connection or try from a different network.');
+        }
+        
+        if (error.code === 'ENOTFOUND') {
+          throw new Error('Cannot resolve Shiprocket API domain. Please check your DNS settings or try from a different network.');
+        }
+        
+        if (error.code === 'ETIMEDOUT') {
+          throw new Error('Shiprocket API request timed out. Please try again or check your network connection.');
+        }
+        
+        // If we got HTML responses, it's likely a network/proxy issue
+        throw new Error(`Shiprocket API is not accessible from your network. This could be due to:
+1. Corporate firewall blocking the request
+2. ISP restrictions
+3. Geographic blocking by Shiprocket
+4. Network proxy interfering
+
+Please try:
+1. Using a different internet connection (mobile hotspot)
+2. Contacting your network administrator
+3. Using a VPN
+4. Contacting Shiprocket support
+
+Email attempted: ${email}`);
+      }
     }
-    if (error.response?.status === 401) {
-      throw new Error('Invalid Shiprocket credentials. Please check your email and password.');
-    }
-    throw error;
   }
 }
 
@@ -231,14 +331,14 @@ async function connectPlatform(req, res) {
 
     console.log(`✅ ${platform} connected successfully`);
 
-    // Immediately sync shipments after connecting (for Shiprocket)
+    // Immediately test API after connecting (for Shiprocket)
     if (platform === 'Shiprocket' && connectionData.token) {
-      console.log(`🔄 Auto-syncing shipments after connection...`);
+      console.log(`🧪 Testing Shiprocket API after connection...`);
       try {
-        const syncResult = await shiprocketService.syncShipments(userId, connectionData.token);
-        console.log(`✅ Auto-sync complete: ${syncResult.count} shipments\n`);
-      } catch (syncError) {
-        console.log(`⚠️  Auto-sync failed: ${syncError.message}\n`);
+        const testResult = await shiprocketService.testShiprocketAPI(connectionData.token);
+        console.log(`✅ API test successful: ${testResult.data?.length || 0} shipments found\n`);
+      } catch (testError) {
+        console.log(`⚠️  API test failed: ${testError.message}\n`);
       }
     }
 
@@ -327,7 +427,7 @@ async function disconnect(req, res) {
 }
 
 /**
- * Sync shipments from Shiprocket
+ * Test Shiprocket API connection
  * @route POST /api/shipping/sync
  * @access Protected
  */
@@ -335,7 +435,7 @@ async function syncShipments(req, res) {
   try {
     const userId = req.user.userId;
 
-    console.log(`\n🔄 Syncing shipments for user: ${userId}`);
+    console.log(`\n🧪 Testing Shiprocket API for user: ${userId}`);
 
     // Get Shiprocket connection
     const command = new GetCommand({
@@ -361,19 +461,20 @@ async function syncShipments(req, res) {
       });
     }
 
-    // Sync shipments using service
-    const syncResult = await shiprocketService.syncShipments(userId, token);
+    // Test API using service
+    const testResult = await shiprocketService.testShiprocketAPI(token);
 
     res.json({
       success: true,
-      message: `Synced ${syncResult.count} shipments successfully`,
-      count: syncResult.count
+      message: `API test successful - found ${testResult.data?.length || 0} shipments`,
+      count: testResult.data?.length || 0,
+      data: testResult
     });
 
   } catch (error) {
-    console.error('❌ Sync shipments error:', error);
+    console.error('❌ Shiprocket API test error:', error);
     res.status(500).json({
-      error: 'Failed to sync shipments',
+      error: 'Failed to test Shiprocket API',
       message: error.message
     });
   }

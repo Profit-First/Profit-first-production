@@ -4,7 +4,7 @@
  */
 
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, GetCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, GetCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 
 const client = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
@@ -192,10 +192,104 @@ const updateShiprocket = async (req, res) => {
   }
 };
 
+/**
+ * Get Business Expenses
+ * @route GET /api/user/business-expenses
+ * @access Protected
+ */
+const getBusinessExpenses = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    const command = new QueryCommand({
+      TableName: process.env.DYNAMODB_TABLE_NAME || 'Users',
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: {
+        ':userId': userId
+      },
+      ProjectionExpression: 'businessExpenses'
+    });
+    
+    const result = await docClient.send(command);
+    const user = result.Items?.[0];
+    
+    res.json({
+      expenses: user?.businessExpenses || {
+        agencyFees: 0,
+        rtoHandlingFees: 0,
+        paymentGatewayFeePercent: 2.5,
+        staffFees: 0,
+        officeRent: 0,
+        otherExpenses: 0
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get business expenses error:', error);
+    res.status(500).json({
+      error: 'Failed to get business expenses',
+      message: error.message
+    });
+  }
+};
+
+/**
+ * Update Business Expenses
+ * @route POST /api/user/business-expenses
+ * @access Protected
+ */
+const updateBusinessExpenses = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { expenses } = req.body;
+    
+    // Validate expenses object
+    const requiredFields = ['agencyFees', 'rtoHandlingFees', 'paymentGatewayFeePercent', 'staffFees', 'officeRent', 'otherExpenses'];
+    for (const field of requiredFields) {
+      if (typeof expenses[field] !== 'number' || expenses[field] < 0) {
+        return res.status(400).json({
+          error: 'Invalid expense data',
+          message: `${field} must be a non-negative number`
+        });
+      }
+    }
+    
+    // Update user's business expenses
+    const command = new UpdateCommand({
+      TableName: process.env.DYNAMODB_TABLE_NAME || 'Users',
+      Key: { userId },
+      UpdateExpression: 'SET businessExpenses = :expenses, updatedAt = :updatedAt',
+      ExpressionAttributeValues: {
+        ':expenses': expenses,
+        ':updatedAt': new Date().toISOString()
+      }
+    });
+    
+    await docClient.send(command);
+    
+    console.log(`✅ Business expenses updated for user: ${userId}`);
+    
+    res.json({
+      success: true,
+      message: 'Business expenses updated successfully',
+      expenses
+    });
+    
+  } catch (error) {
+    console.error('Update business expenses error:', error);
+    res.status(500).json({
+      error: 'Failed to update business expenses',
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateBasicProfile,
   updateShopify,
   updateMeta,
-  updateShiprocket
+  updateShiprocket,
+  getBusinessExpenses,
+  updateBusinessExpenses
 };

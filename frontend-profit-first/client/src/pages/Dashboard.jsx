@@ -144,7 +144,9 @@ const renderActiveShape = (props) => {
 const Dashboard = () => {
   // State for data, loading, and errors
   const [dashboardData, setDashboardData] = useState(null);
+  const [shiprocketData, setShiprocketData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingShiprocket, setIsLoadingShiprocket] = useState(true);
   const [error, setError] = useState(null);
 
   const [dateRange, setDateRange] = useState(() => {
@@ -211,6 +213,43 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
+  }, [dateRange]);
+
+  // Fetch Shiprocket data separately
+  useEffect(() => {
+    const fetchShiprocketData = async () => {
+      setIsLoadingShiprocket(true);
+      const startDateString = format(dateRange.startDate, "yyyy-MM-dd");
+      const endDateString = format(dateRange.endDate, "yyyy-MM-dd");
+      const userId = localStorage.getItem("userId");
+
+      console.log('🚀 Fetching Shiprocket data:', {
+        startDate: startDateString,
+        endDate: endDateString,
+        userId
+      });
+
+      try {
+        const response = await axiosInstance.get("/data/shiprocket-dashboard", {
+          params: {
+            startDate: startDateString,
+            endDate: endDateString,
+            userId: userId
+          },
+        });
+
+        console.log('✅ Shiprocket data received:', response.data);
+        setShiprocketData(response.data);
+      } catch (err) {
+        console.error('❌ Shiprocket fetch error:', err);
+        // Don't set error, just log it - Shiprocket is optional
+        setShiprocketData(null);
+      } finally {
+        setIsLoadingShiprocket(false);
+      }
+    };
+
+    fetchShiprocketData();
   }, [dateRange]);
 
   // Derived safe variables to avoid undefined errors
@@ -396,6 +435,77 @@ const Dashboard = () => {
           <Card key={title} title={title} value={value} formula={formula} />
         ))}
       </div>
+
+      {/* Shiprocket Metrics Section */}
+      {isLoadingShiprocket ? (
+        <div className="bg-[#00131C] rounded-2xl p-6">
+          <div className="flex items-center justify-center h-32">
+            <PulseLoader size={10} color="#12EB8E" />
+            <span className="ml-3 text-gray-400">Loading Shiprocket data...</span>
+          </div>
+        </div>
+      ) : shiprocketData && shiprocketData.summary ? (
+        <div className="bg-gradient-to-br from-[#001a1a] to-[#00131C] rounded-2xl p-6 border border-green-500/20">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              📦 Shiprocket + Meta Data
+              <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">Live API</span>
+            </h3>
+            {shiprocketData.metadata?.hasMetaData && (
+              <span className="text-xs text-green-400">✅ Meta Connected</span>
+            )}
+          </div>
+          
+          {/* Extract Shiprocket metrics */}
+          {(() => {
+            const shiprocketSummary = shiprocketData.summary || [];
+            
+            // Available metrics (with real data)
+            const availableMetrics = shiprocketSummary.filter(card => 
+              ['Revenue', 'Ad Spend', 'Shipping Cost', 'Business Expenses', 'Net Profit', 'Net Profit Margin', 'ROAS', 'POAS', 'AOV', 'CPP'].includes(card.title) && 
+              card.value !== '--'
+            );
+            
+            // Unavailable metrics (COGS related)
+            const unavailableMetrics = shiprocketSummary.filter(card => 
+              ['COGS', 'Gross Profit', 'Gross Profit Margin'].includes(card.title) || 
+              card.value === '--'
+            );
+            
+            return (
+              <>
+                {/* Available Metrics */}
+                {availableMetrics.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm text-green-400 mb-3 flex items-center gap-2">
+                      ✅ Available Metrics (Shiprocket + Meta Data)
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                      {availableMetrics.map(({ title, value, formula }) => (
+                        <Card key={title} title={title} value={value} formula={formula} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Unavailable Metrics */}
+                {unavailableMetrics.length > 0 && (
+                  <div>
+                    <h4 className="text-sm text-red-400 mb-3 flex items-center gap-2">
+                      ❌ Not Available (Requires COGS Data)
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {unavailableMetrics.map(({ title, value, formula }) => (
+                        <Card key={title} title={title} value={value} formula={formula} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      ) : null}
 
       <div className="bg-[#00131C] rounded-2xl p-6">
         <h3 className="text-xl font-bold text-white mb-4">Performance</h3>

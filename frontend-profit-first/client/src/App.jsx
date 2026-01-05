@@ -32,7 +32,7 @@ import Contactus from "./pages/Contactus";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
 import ScrollToTop from "./utils/ScrollToTop";
-import { ToastContainer } from "react-toastify";
+import { ToastContainer, Slide } from "react-toastify";
 import VerifyEmail from "./pages/VerifyEmail";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
@@ -59,6 +59,7 @@ import OrderConfirmation from "./pages/OrderConfirmation";
 import AbandonedCall from "./pages/AbandonedCall";
 import ForgotPassword from "./pages/ForgotPassword";
 import OAuthCallback from "./pages/OAuthCallback";
+import BusinessExpenses from "./pages/BusinessExpenses";
 import { isTokenValid } from "./utils/auth";
 import { useState, useEffect } from "react";
 
@@ -181,6 +182,7 @@ function AppWrapper() {
         theme="dark"
         closeButton={true}
         limit={3}
+        transition={Slide}
         style={{ 
           zIndex: 99999,
           top: '20px',
@@ -278,6 +280,7 @@ function AppWrapper() {
           <Route path="meta-ads/carousel-completion" element={<CarouselCompletion />} />
           <Route path="ai-agent/order-confirmations" element={<OrderConfirmation />} />
           <Route path="ai-agent/abandon-calls" element={<AbandonedCall />} />
+          <Route path="business-expenses" element={<BusinessExpenses />} />
         </Route>
         <Route path="*" element={<Homepage />} />
       </Routes>

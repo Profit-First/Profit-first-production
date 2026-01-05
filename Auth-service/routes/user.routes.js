@@ -10,7 +10,9 @@ const {
   updateBasicProfile,
   updateShopify,
   updateMeta,
-  updateShiprocket
+  updateShiprocket,
+  getBusinessExpenses,
+  updateBusinessExpenses
 } = require('../controllers/user.controller');
 const { authenticateToken } = require('../middleware/auth.middleware');
 
@@ -31,5 +33,11 @@ router.put('/profile/meta', updateMeta);
 
 // PUT /api/user/profile/shiprocket - Update Shiprocket credentials
 router.put('/profile/shiprocket', updateShiprocket);
+
+// GET /api/user/business-expenses - Get business expenses
+router.get('/business-expenses', getBusinessExpenses);
+
+// POST /api/user/business-expenses - Update business expenses
+router.post('/business-expenses', updateBusinessExpenses);
 
 module.exports = router;

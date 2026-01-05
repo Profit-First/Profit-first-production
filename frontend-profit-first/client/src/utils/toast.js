@@ -3,7 +3,7 @@
  * User-friendly messages with auto-dismiss and beautiful styling
  */
 
-import { toast as reactToast } from 'react-toastify';
+import { toast as reactToast, Slide } from 'react-toastify';
 
 // Default configuration for all toasts
 const defaultConfig = {
@@ -15,7 +15,7 @@ const defaultConfig = {
   draggable: true,
   progress: undefined,
   theme: "dark",
-  transition: "slide", // Smooth slide animation
+  transition: Slide, // Use proper React component
   style: {
     background: '#1a1a1a',
     color: '#ffffff',

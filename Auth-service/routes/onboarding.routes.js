@@ -37,6 +37,9 @@ router.post('/manual-sync', onboardingController.manualSync);
 // Get sync status - for polling progress
 router.get('/sync-status', onboardingController.getSyncStatus);
 
+// Check if Shopify data sync is complete - for dashboard
+router.get('/data-ready', onboardingController.isDataReady);
+
 // Fetch products from Shopify
 router.get('/fetchproduct', onboardingController.fetchProducts);
 

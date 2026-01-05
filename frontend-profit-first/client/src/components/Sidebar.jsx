@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { HiMenuAlt3, HiX } from "react-icons/hi";
-import { 
-  FiHome, 
-  FiBarChart2, 
-  FiPackage, 
-  FiSettings, 
+import {
+  FiHome,
+  FiBarChart2,
+  FiPackage,
+  FiSettings,
   FiHelpCircle,
   FiMessageSquare,
   FiTrendingUp,
@@ -39,7 +39,7 @@ const Sidebar = () => {
           <HiMenuAlt3 size={28} />
         </button>
       </div>
-      
+
       <div
         className={`fixed top-0 left-0 h-screen w-72 2xl:w-80 bg-[#0a0a0a] text-white z-50 transform transition-transform duration-300 ease-in-out
           ${isOpen ? "translate-x-0" : "-translate-x-full"} 
@@ -64,12 +64,25 @@ const Sidebar = () => {
 
             {/* Navigation */}
             <div className="space-y-1 2xl:space-y-2">
+
+              <NavLink
+                to="/dashboard"
+                end
+                onClick={() => setIsOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                  }`
+                }
+              >
+                <FiHome className="w-4 h-4 2xl:w-5 2xl:h-5" />
+                <span>Dashboard</span>
+              </NavLink>
+
               <NavLink
                 to="/dashboard/chatbot"
                 onClick={() => setIsOpen(false)}
                 className={({ isActive }) =>
-                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${
-                    isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
                   }`
                 }
               >
@@ -81,34 +94,21 @@ const Sidebar = () => {
                 to="/dashboard/growth"
                 onClick={() => setIsOpen(false)}
                 className={({ isActive }) =>
-                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${
-                    isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
                   }`
                 }
               >
                 <FiTrendingUp className="w-4 h-4 2xl:w-5 2xl:h-5" />
                 <span>Growth</span>
               </NavLink>
-              <NavLink
-                to="/dashboard"
-                end
-                onClick={() => setIsOpen(false)}
-                className={({ isActive }) =>
-                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${
-                    isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
-                  }`
-                }
-              >
-                <FiHome className="w-4 h-4 2xl:w-5 2xl:h-5" />
-                <span>Dashboard</span>
-              </NavLink>
+
+
 
               <NavLink
                 to="/dashboard/analytics"
                 onClick={() => setIsOpen(false)}
                 className={({ isActive }) =>
-                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${
-                    isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
                   }`
                 }
               >
@@ -121,8 +121,7 @@ const Sidebar = () => {
                 to="/dashboard/products"
                 onClick={() => setIsOpen(false)}
                 className={({ isActive }) =>
-                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${
-                    isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
                   }`
                 }
               >
@@ -153,7 +152,7 @@ const Sidebar = () => {
                 >
                   <FiCpu className="w-4 h-4 2xl:w-5 2xl:h-5" />
                   <span>AI Agent</span>
-                  <FiChevronDown 
+                  <FiChevronDown
                     className={`w-4 h-4 ml-auto transition-transform ${showAIAgentMenu ? 'rotate-180' : ''}`}
                   />
                 </div>
@@ -168,8 +167,7 @@ const Sidebar = () => {
                         setShowAIAgentMenu(false);
                       }}
                       className={({ isActive }) =>
-                        `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${
-                          isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                        `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
                         }`
                       }
                     >
@@ -183,8 +181,7 @@ const Sidebar = () => {
                         setShowAIAgentMenu(false);
                       }}
                       className={({ isActive }) =>
-                        `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${
-                          isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                        `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
                         }`
                       }
                     >
@@ -194,12 +191,25 @@ const Sidebar = () => {
                   </div>
                 )}
               </div>
+
+              <NavLink
+                to="/dashboard/business-expenses"
+                onClick={() => setIsOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base ${isActive ? "bg-[#1a1a1a] text-white" : "text-gray-400 hover:bg-[#1a1a1a] hover:text-white"
+                  }`
+                }
+              >
+                <FiSettings className="w-4 h-4 2xl:w-5 2xl:h-5" />
+                <span>Business Expenses</span>
+                <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] 2xl:text-xs px-1.5 py-0.5 rounded">New</span>
+              </NavLink>
             </div>
 
             {/* Affiliate Program Card */}
             {showAffiliate && (
               <div className="mt-8 bg-[#1a1a1a] rounded-lg p-4 relative">
-                <button 
+                <button
                   onClick={() => setShowAffiliate(false)}
                   className="absolute top-2 right-2 text-gray-500 hover:text-white"
                 >
@@ -234,7 +244,7 @@ const Sidebar = () => {
               <FiHelpCircle size={16} />
               <span>Help Center</span>
             </button>
-            <button 
+            <button
               onClick={handleLogout}
               className="w-full flex items-center gap-2 p-2 rounded-lg text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors text-sm"
             >

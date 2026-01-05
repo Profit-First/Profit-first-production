@@ -10,7 +10,7 @@ const { PutCommand, GetCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb
 const { dynamoDB } = require('../config/aws.config');
 
 const CONNECTIONS_TABLE = process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_connections';
-const SHOPIFY_API_VERSION = '2023-10';
+const SHOPIFY_API_VERSION = '2025-10';
 const EXTERNAL_OAUTH_URL = 'https://www.profitfirst.co.in/connect';
 
 class ShopifyController {

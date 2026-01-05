@@ -5,7 +5,7 @@
  */
 
 const onboardingService = require('../services/onboarding.service');
-const shopifySyncService = require('../services/shopify-sync-improved.service');
+const shopifyBackgroundSync = require('../services/shopify-background-sync.service');
 const { getCache, setCache, deleteCache } = require('../config/redis.config');
 
 class OnboardingController {
@@ -61,9 +61,9 @@ class OnboardingController {
       await deleteCache(cacheKey);
       console.log(`🗑️  Cache invalidated: ${cacheKey}`);
 
-      // Trigger initial Shopify sync after Step 2 (Shopify connection completed)
+      // Trigger background Shopify sync after Step 2 (Shopify connection completed)
       if (step === 2 && data.storeUrl && data.connected) {
-        console.log(`\n🚀 Step 2 completed - Triggering initial Shopify sync in background...`);
+        console.log(`\n🚀 Step 2 completed - Starting background Shopify sync...`);
         
         // Run sync in background using setImmediate to not block response
         setImmediate(async () => {
@@ -80,26 +80,23 @@ class OnboardingController {
             const connectionResult = await dynamoDB.send(connectionCommand);
             
             if (!connectionResult.Item || !connectionResult.Item.accessToken) {
-              console.error(`❌ No Shopify connection found for initial sync`);
+              console.error(`❌ No Shopify connection found for background sync`);
               return;
             }
             
             const { shopUrl, accessToken } = connectionResult.Item;
-            console.log(`   Starting sync for shop: ${shopUrl}`);
+            console.log(`   Starting background sync for shop: ${shopUrl}`);
             
-            const syncResult = await shopifySyncService.initialSync(userId, shopUrl, accessToken);
+            // Start background sync (non-blocking)
+            await shopifyBackgroundSync.startBackgroundSync(userId, shopUrl, accessToken);
             
-            if (syncResult.success) {
-              console.log(`✅ Initial sync completed for user: ${userId} - ${syncResult.data.orders} orders synced`);
-            } else {
-              console.error(`❌ Initial sync failed for user: ${userId}`, syncResult.error);
-            }
+            console.log(`✅ Background sync initiated for user: ${userId}`);
           } catch (error) {
-            console.error(`❌ Initial sync error for user: ${userId}`, error.message);
+            console.error(`❌ Background sync initiation error for user: ${userId}`, error.message);
           }
         });
         
-        console.log(`✅ Initial sync started in background - user can proceed`);
+        console.log(`✅ Background sync will start shortly - user can proceed with onboarding`);
       }
 
       res.status(200).json({
@@ -236,7 +233,7 @@ class OnboardingController {
   }
 
   /**
-   * Background sync of orders and customers (last 3 months)
+   * Background sync of orders and customers (last 3 months only)
    * 
    * @route POST /api/onboard/background-sync
    * @access Protected
@@ -245,12 +242,13 @@ class OnboardingController {
     try {
       const userId = req.user.userId;
       
-      console.log(`\n🔄 Starting background sync for user: ${userId}`);
+      console.log(`\n🔄 Starting onboarding background sync for user: ${userId}`);
+      console.log(`   📅 Fetching last 3 months of data only`);
       
       // Send immediate response so user doesn't wait
       res.json({
         success: true,
-        message: 'Background sync started'
+        message: 'Onboarding background sync started (last 3 months)'
       });
 
       // Get Shopify connection
@@ -265,7 +263,7 @@ class OnboardingController {
       const result = await dynamoDB.send(command);
 
       if (!result.Item) {
-        console.error(`❌ No Shopify connection for background sync`);
+        console.error(`❌ No Shopify connection for onboarding background sync`);
         return;
       }
 
@@ -276,15 +274,15 @@ class OnboardingController {
       threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
       const createdAtMin = threeMonthsAgo.toISOString();
 
-      console.log(`   Syncing data from: ${createdAtMin}`);
+      console.log(`   📅 Syncing data from: ${createdAtMin} to now`);
 
-      // Sync orders and customers in background
+      // Sync orders and customers in background (3 months only)
       const axios = require('axios');
       
-      // Fetch orders
-      console.log(`📦 Fetching orders...`);
+      // Fetch orders (last 3 months)
+      console.log(`📦 Fetching orders from last 3 months...`);
       const ordersResponse = await axios.get(
-        `https://${shopUrl}/admin/api/2023-10/orders.json`,
+        `https://${shopUrl}/admin/api/2025-10/orders.json`,
         {
           headers: { 'X-Shopify-Access-Token': accessToken },
           params: { 
@@ -295,10 +293,10 @@ class OnboardingController {
         }
       );
 
-      // Fetch customers
-      console.log(`👥 Fetching customers...`);
+      // Fetch customers (last 3 months)
+      console.log(`👥 Fetching customers from last 3 months...`);
       const customersResponse = await axios.get(
-        `https://${shopUrl}/admin/api/2023-10/customers.json`,
+        `https://${shopUrl}/admin/api/2025-10/customers.json`,
         {
           headers: { 'X-Shopify-Access-Token': accessToken },
           params: { 
@@ -311,7 +309,7 @@ class OnboardingController {
       const orders = ordersResponse.data.orders || [];
       const customers = customersResponse.data.customers || [];
 
-      console.log(`✅ Fetched ${orders.length} orders and ${customers.length} customers`);
+      console.log(`✅ Fetched ${orders.length} orders and ${customers.length} customers (last 3 months)`);
 
       // Store orders in DynamoDB
       const { PutCommand } = require('@aws-sdk/lib-dynamodb');
@@ -362,10 +360,10 @@ class OnboardingController {
       }
 
       console.log(`✅ Stored ${orders.length} orders and ${customers.length} customers`);
-      console.log(`✅ Background sync completed for user: ${userId}\n`);
+      console.log(`✅ Onboarding background sync completed for user: ${userId} (last 3 months only)\n`);
 
     } catch (error) {
-      console.error('❌ Background sync error:', error.message);
+      console.error('❌ Onboarding background sync error:', error.message);
       // Don't throw error - this is background process
     }
   }
@@ -415,7 +413,7 @@ class OnboardingController {
       // Fetch products from Shopify
       const axios = require('axios');
       const response = await axios.get(
-        `https://${shopUrl}/admin/api/2023-10/products.json`,
+        `https://${shopUrl}/admin/api/2025-10/products.json`,
         {
           headers: {
             'X-Shopify-Access-Token': accessToken
@@ -547,38 +545,54 @@ class OnboardingController {
 
       console.log(`\n🚚 Step 5: Connecting ${platform} for user: ${userId}`);
 
-      // Forward to shipping controller
+      // Call shipping controller directly instead of HTTP request
       const shippingController = require('./shipping.controller');
-      const axios = require('axios');
       
-      // Make internal API call to shipping endpoint
-      const token = req.headers.authorization;
+      // Create a mock request object for the shipping controller
+      const mockReq = {
+        user: { userId },
+        body: { platform, email, password, access_token, secret_key }
+      };
       
-      const response = await axios.post(
-        `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/shipping/connect`,
-        { platform, email, password, access_token, secret_key },
-        { headers: { 'Authorization': token } }
-      );
+      // Create a mock response object
+      let responseData = null;
+      let statusCode = 200;
+      
+      const mockRes = {
+        json: (data) => { responseData = data; },
+        status: (code) => { 
+          statusCode = code; 
+          return { json: (data) => { responseData = data; } };
+        }
+      };
+      
+      // Call the shipping controller directly
+      await shippingController.connectPlatform(mockReq, mockRes);
+      
+      // Check if the connection was successful
+      if (statusCode !== 200 || !responseData?.success) {
+        throw new Error(responseData?.message || 'Connection failed');
+      }
 
       console.log(`✅ ${platform} connected successfully`);
 
       res.json({
         success: true,
         message: `${platform} connected successfully`,
-        platform: response.data.platform
+        platform: responseData.platform || platform
       });
 
     } catch (error) {
       console.error('❌ Step 5 shipping connection error:', error.message);
       res.status(500).json({ 
         error: 'Failed to connect shipping platform',
-        message: error.response?.data?.message || error.message 
+        message: error.message 
       });
     }
   }
 
   /**
-   * Manual Sync - Trigger sync of last 3 months of Shopify orders
+   * Manual Sync - Trigger background sync
    * Called when user clicks "Sync Now" button on dashboard
    * 
    * @route POST /api/onboard/manual-sync
@@ -591,7 +605,7 @@ class OnboardingController {
       console.log(`\n🔄 Manual sync triggered for user: ${userId}`);
       
       // Check if sync is already in progress
-      const currentStatus = shopifySyncService.getSyncStatus(userId);
+      const currentStatus = await shopifyBackgroundSync.getSyncStatus(userId);
       if (currentStatus && currentStatus.status === 'in_progress') {
         return res.json({
           success: true,
@@ -600,23 +614,37 @@ class OnboardingController {
         });
       }
       
-      // Start sync in background
-      shopifySyncService.manualSync(userId)
-        .then(result => {
-          console.log(`✅ Manual sync completed for user ${userId}:`, result);
-        })
-        .catch(err => {
-          console.error(`❌ Manual sync error for user ${userId}:`, err.message);
+      // Get Shopify connection
+      const { GetCommand } = require('@aws-sdk/lib-dynamodb');
+      const { dynamoDB } = require('../config/aws.config');
+      
+      const command = new GetCommand({
+        TableName: process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_connections',
+        Key: { userId }
+      });
+
+      const result = await dynamoDB.send(command);
+
+      if (!result.Item || !result.Item.accessToken) {
+        return res.status(404).json({
+          success: false,
+          error: 'No Shopify connection found'
         });
+      }
+
+      const { shopUrl, accessToken } = result.Item;
+      
+      // Start background sync
+      await shopifyBackgroundSync.startBackgroundSync(userId, shopUrl, accessToken);
       
       // Return immediately with initial status
       res.json({
         success: true,
-        message: 'Sync started',
+        message: 'Manual sync started',
         status: {
-          status: 'in_progress',
-          stage: 'starting',
-          message: 'Starting sync...'
+          status: 'starting',
+          stage: 'initializing',
+          message: 'Starting manual sync...'
         }
       });
       
@@ -640,7 +668,7 @@ class OnboardingController {
     try {
       const userId = req.user.userId;
       
-      const status = shopifySyncService.getSyncStatus(userId);
+      const status = await shopifyBackgroundSync.getSyncStatus(userId);
       
       if (!status) {
         return res.json({
@@ -662,6 +690,51 @@ class OnboardingController {
       res.status(500).json({
         success: false,
         error: 'Failed to get sync status',
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Check if Shopify data sync is complete
+   * Used by dashboard to show sync status messages
+   * 
+   * @route GET /api/onboard/data-ready
+   * @access Protected
+   */
+  async isDataReady(req, res) {
+    try {
+      const userId = req.user.userId;
+      
+      // Check if data sync is complete
+      const isReady = await shopifyBackgroundSync.isDataSynced(userId);
+      
+      if (isReady) {
+        res.json({
+          success: true,
+          dataReady: true,
+          message: 'Your Shopify data is ready!'
+        });
+      } else {
+        // Get current sync status for progress info
+        const syncStatus = await shopifyBackgroundSync.getSyncStatus(userId);
+        
+        res.json({
+          success: true,
+          dataReady: false,
+          message: 'We are still syncing your Shopify data. Please wait...',
+          syncStatus: syncStatus || {
+            status: 'pending',
+            message: 'Data sync will start shortly'
+          }
+        });
+      }
+      
+    } catch (error) {
+      console.error('Check data ready error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to check data status',
         message: error.message
       });
     }

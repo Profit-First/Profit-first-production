@@ -1,8 +1,0 @@
-{
-  "phoneNumber": "+1234567890",
-  "purpose": "Demo Call - AI Assistant Test",
-  "initialMessage": "Hello! This is a demonstration of our AI calling system. I'm an AI assistant calling to show you how our technology works.",
-  "customerName": "Demo User",
-  "customPrompt": "You are a friendly AI assistant demonstrating calling capabilities. Be conversational and helpful. Keep responses under 30 seconds when spoken.",
-  "voiceId": "Joanna"
-}
