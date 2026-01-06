@@ -10,7 +10,7 @@ const { PutCommand, GetCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb
 const { dynamoDB } = require('../config/aws.config');
 
 const CONNECTIONS_TABLE = process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_connections';
-const SHOPIFY_API_VERSION = '2025-10';
+const SHOPIFY_API_VERSION = '2024-10';
 const EXTERNAL_OAUTH_URL = 'https://www.profitfirst.co.in/connect';
 
 class ShopifyController {
@@ -89,27 +89,41 @@ class ShopifyController {
       // Get access token from header
       const accessToken = req.headers['x-shopify-access-token'];
       
-      // Get userId from authenticated user (JWT token)
-      const userId = req.user?.userId;
+      // Get userId from JWT (preferred) or body (fallback)
+      const userId = req.user?.userId || req.body.userId;
       
       // Get other data from body
       const { shopUrl, storeName, storeEmail, storeDomain } = req.body;
 
       console.log(`\n📥 Shopify callback received`);
-      console.log(`   User ID (from JWT): ${userId}`);
-      console.log(`   Shop: ${shopUrl}`);
-      console.log(`   🔑 Shopify-Access-Token (from header): ${accessToken}`);
+      console.log(`   🔐 JWT Auth: ${req.user ? 'Present' : 'Missing'}`);
+      console.log(`   👤 User ID (from ${req.user?.userId ? 'JWT' : 'body'}): ${userId}`);
+      console.log(`   🏪 Shop: ${shopUrl}`);
+      console.log(`   🔑 Access Token present: ${!!accessToken}`);
+      if (accessToken) {
+        console.log(`   🔑 Token preview: ${accessToken.substring(0, 20)}...`);
+      }
+      console.log(`   📦 Body keys: ${Object.keys(req.body).join(', ')}`);
+      console.log(`   📋 Headers: Authorization=${!!req.headers.authorization}, X-Shopify-Access-Token=${!!req.headers['x-shopify-access-token']}`);
 
       // Validate required parameters
       if (!userId || !shopUrl || !accessToken) {
         console.error(`❌ Missing required parameters:`, {
           userId: !!userId,
           shopUrl: !!shopUrl,
-          accessToken: !!accessToken
+          accessToken: !!accessToken,
+          jwtPresent: !!req.user,
+          bodyUserId: !!req.body.userId
         });
         return res.status(400).json({ 
           error: 'Missing required parameters',
-          message: 'Authentication required. shopUrl and accessToken (in header) are required'
+          message: 'userId, shopUrl and accessToken (in header X-Shopify-Access-Token) are required',
+          received: {
+            userId: !!userId,
+            shopUrl: !!shopUrl,
+            accessToken: !!accessToken,
+            jwtAuth: !!req.user
+          }
         });
       }
 

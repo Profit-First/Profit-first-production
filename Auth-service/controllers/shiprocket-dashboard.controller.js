@@ -29,14 +29,21 @@ async function getShiprocketDashboardData(req, res) {
     const userId = req.user.userId;
     const { startDate, endDate } = req.query;
     
-    console.log(`\n📦 Shiprocket Dashboard + Meta - User: ${userId}`);
-    console.log(`📅 Date range: ${startDate} to ${endDate}`);
+    console.log(`\n📦 ========================================`);
+    console.log(`� Sahiprocket Dashboard Request`);
+    console.log(`📦 ========================================`);
+    console.log(`👤 User: ${userId}`);
+    console.log(`📅 Start Date: ${startDate}`);
+    console.log(`📅 End Date: ${endDate}`);
+    console.log(`⏰ Request Time: ${new Date().toISOString()}`);
+    console.log(`📦 ========================================\n`);
 
-    // Step 1: Get Shiprocket token and Meta insights from database
-    const [shiprocketToken, metaConnection, metaInsights] = await Promise.all([
+    // Step 1: Get Shiprocket token, Meta insights, and business expenses from database
+    const [shiprocketToken, metaConnection, metaInsights, businessExpensesData] = await Promise.all([
       getShiprocketToken(userId),
       getMetaConnection(userId),
-      getMetaInsights(userId, startDate, endDate)
+      getMetaInsights(userId, startDate, endDate),
+      getBusinessExpenses(userId)
     ]);
     
     if (!shiprocketToken) {
@@ -72,9 +79,9 @@ async function getShiprocketDashboardData(req, res) {
     const processedData = mergeShiprocketMetaData(shiprocketData, metaInsights);
     
     // Step 4: Calculate comprehensive metrics with real data
-    const summary = calculateComprehensiveMetrics(processedData);
+    const summary = calculateComprehensiveMetrics(processedData, businessExpensesData);
     const performanceChartData = calculatePerformanceChart(processedData.orders);
-    const financialsBreakdownData = calculateFinancialBreakdown(processedData);
+    const financialsBreakdownData = calculateFinancialBreakdown(processedData, businessExpensesData);
 
     const dashboardData = {
       summary,
@@ -174,39 +181,14 @@ async function getMetaConnection(userId) {
 }
 
 /**
- * Get Meta connection from database
- */
-async function getMetaConnection(userId) {
-  try {
-    const command = new QueryCommand({
-      TableName: 'meta_connections',
-      KeyConditionExpression: 'userId = :userId',
-      ExpressionAttributeValues: { ':userId': userId }
-    });
-
-    const result = await dynamoDB.send(command);
-    const connection = result.Items?.[0];
-    
-    if (connection && connection.accessToken && connection.selectedAdAccount) {
-      return {
-        accessToken: connection.accessToken,
-        adAccountId: connection.selectedAdAccount,
-        adAccountName: connection.adAccountName
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('❌ Error fetching Meta connection:', error.message);
-    return null;
-  }
-}
-
-/**
  * Get Meta insights from database (pre-synced data)
  */
 async function getMetaInsights(userId, startDate, endDate) {
   try {
+    console.log(`\n📊 Fetching Meta Insights...`);
+    console.log(`   User: ${userId}`);
+    console.log(`   Date Range: ${startDate} to ${endDate}`);
+    
     const command = new ScanCommand({
       TableName: process.env.META_INSIGHTS_TABLE || 'meta_insights',
       FilterExpression: 'userId = :userId AND #date BETWEEN :startDate AND :endDate',
@@ -224,16 +206,19 @@ async function getMetaInsights(userId, startDate, endDate) {
     const result = await dynamoDB.send(command);
     const insights = result.Items || [];
     
-    console.log(`📊 Meta Insights: Found ${insights.length} insights for user ${userId} (${startDate} to ${endDate})`);
+    console.log(`   ✅ Found ${insights.length} insights`);
     
     if (insights.length > 0) {
       const totalAdSpend = insights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
-      console.log(`   💰 Total Ad Spend from insights: ₹${totalAdSpend.toFixed(2)}`);
+      console.log(`   💰 Total Ad Spend: ₹${totalAdSpend.toFixed(2)}`);
+      console.log(`   📅 Date range in data: ${insights[0]?.date} to ${insights[insights.length - 1]?.date}`);
+    } else {
+      console.log(`   ⚠️  No insights found for this date range`);
     }
     
     return insights.sort((a, b) => a.date.localeCompare(b.date));
   } catch (error) {
-    console.error('Error fetching Meta insights:', error.message);
+    console.error('❌ Error fetching Meta insights:', error.message);
     return [];
   }
 }
@@ -252,164 +237,7 @@ async function fetchShiprocketDataDirect(token, startDate, endDate) {
   return { orders, shipments };
 }
 
-/**
- * Fetch orders directly from Shiprocket API
- */
-async function fetchShiprocketOrdersDirect(token, startDate, endDate) {
-  console.log(`📦 Fetching orders directly from Shiprocket...`);
-  console.log(`📅 Date range: ${startDate} to ${endDate}`);
-  
-  let allOrders = [];
-  let page = 1;
-  const maxPages = 20;
-  const perPage = 250;
-  
-  while (page <= maxPages) {
-    console.log(`   📄 Orders page ${page}...`);
-    
-    const params = {
-      per_page: perPage,
-      page: page
-    };
-    
-    // Add date filters - try multiple approaches
-    if (startDate && endDate) {
-      // Method 1: DD-MM-YYYY format (Shiprocket's preferred format)
-      const [startYear, startMonth, startDay] = startDate.split('-');
-      const [endYear, endMonth, endDay] = endDate.split('-');
-      
-      params.created_after = `${startDay}-${startMonth}-${startYear}`;
-      params.created_before = `${endDay}-${endMonth}-${endYear}`;
-      
-      console.log(`      📅 Using DD-MM-YYYY format: ${params.created_after} to ${params.created_before}`);
-    } else {
-      console.log(`      📅 No date filter - fetching all orders`);
-    }
-    
-    try {
-      const response = await axios.get(`${SHIPROCKET_API_BASE}/orders`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        params
-      });
-      
-      const orders = response.data?.data || [];
-      console.log(`      📦 Found ${orders.length} orders on page ${page}`);
-      
-      if (orders.length === 0) {
-        console.log(`      ⚠️  No orders found on page ${page}`);
-        break;
-      }
-      
-      // Process orders
-      orders.forEach(order => {
-        allOrders.push({
-          type: 'order',
-          id: order.id,
-          orderId: order.channel_order_id || order.id,
-          total: parseFloat(order.total || 0),
-          status: order.status,
-          statusCode: order.status_code,
-          paymentMethod: order.payment_method,
-          customerName: order.customer_name,
-          orderDate: order.channel_created_at || order.created_at,
-          shipments: order.shipments || []
-        });
-      });
-      
-      if (orders.length < perPage) {
-        console.log(`      ✅ Last page reached (${orders.length} < ${perPage})`);
-        break;
-      }
-      page++;
-      
-    } catch (error) {
-      console.error(`❌ Error fetching orders page ${page}:`, error.message);
-      break;
-    }
-  }
-  
-  console.log(`✅ Orders: ${allOrders.length} total records`);
-  return allOrders;
-}
 
-/**
- * Fetch shipments directly from Shiprocket API
- */
-async function fetchShiprocketShipmentsDirect(token, startDate, endDate) {
-  console.log(`🚚 Fetching shipments directly from Shiprocket...`);
-  console.log(`📅 Date range: ${startDate} to ${endDate}`);
-  
-  let allShipments = [];
-  let page = 1;
-  const maxPages = 20;
-  const perPage = 250;
-  
-  while (page <= maxPages) {
-    console.log(`   📄 Shipments page ${page}...`);
-    
-    const params = {
-      per_page: perPage,
-      page: page
-    };
-    
-    // Add date filters - shipments API uses YYYY-MM-DD format
-    if (startDate && endDate) {
-      params.start_date = startDate;
-      params.end_date = endDate;
-      console.log(`      📅 Using YYYY-MM-DD format: ${params.start_date} to ${params.end_date}`);
-    } else {
-      console.log(`      📅 No date filter - fetching all shipments`);
-    }
-    
-    try {
-      const response = await axios.get(`${SHIPROCKET_API_BASE}/shipments`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        params
-      });
-      
-      const shipments = response.data?.data || [];
-      console.log(`      🚚 Found ${shipments.length} shipments on page ${page}`);
-      
-      if (shipments.length === 0) {
-        console.log(`      ⚠️  No shipments found on page ${page}`);
-        break;
-      }
-      
-      // Process shipments
-      shipments.forEach(shipment => {
-        allShipments.push({
-          type: 'shipment',
-          id: shipment.id,
-          orderId: shipment.order_id,
-          awb: shipment.awb,
-          status: shipment.status,
-          shippingCost: parseFloat(shipment.charges?.freight_charges || 0),
-          paymentMethod: shipment.payment_method,
-          createdAt: shipment.created_at
-        });
-      });
-      
-      if (shipments.length < perPage) {
-        console.log(`      ✅ Last page reached (${shipments.length} < ${perPage})`);
-        break;
-      }
-      page++;
-      
-    } catch (error) {
-      console.error(`❌ Error fetching shipments page ${page}:`, error.message);
-      break;
-    }
-  }
-  
-  console.log(`✅ Shipments: ${allShipments.length} total records`);
-  return allShipments;
-}
 
 /**
  * Merge Shiprocket and Meta data
@@ -607,7 +435,7 @@ async function fetchShiprocketOrdersDirect(token, startDate, endDate) {
     }
   }
   
-  console.log(`✅ Orders: ${allOrders.length} total records`);
+  console.log(`✅ Orders: ${allOrders.length} total records (before client-side filtering)`);
   
   // Debug: Show status breakdown
   if (allOrders.length > 0) {
@@ -616,7 +444,35 @@ async function fetchShiprocketOrdersDirect(token, startDate, endDate) {
       const status = order.status || 'Unknown';
       statusCounts[status] = (statusCounts[status] || 0) + 1;
     });
-    console.log(`📊 Orders status breakdown:`, statusCounts);
+    console.log(`📊 Orders status breakdown (before filtering):`, statusCounts);
+  }
+  
+  // CRITICAL: Client-side date filtering as backup
+  // Shiprocket API sometimes doesn't filter properly, so we filter again
+  if (startDate && endDate && allOrders.length > 0) {
+    const startDateObj = new Date(startDate + 'T00:00:00');
+    const endDateObj = new Date(endDate + 'T23:59:59');
+    
+    const beforeFilter = allOrders.length;
+    allOrders = allOrders.filter(order => {
+      if (!order.orderDate) return false;
+      const orderDateObj = new Date(order.orderDate);
+      return orderDateObj >= startDateObj && orderDateObj <= endDateObj;
+    });
+    
+    console.log(`🔍 Client-side date filter: ${beforeFilter} → ${allOrders.length} orders`);
+    if (allOrders.length > 0) {
+      const sortedOrders = [...allOrders].sort((a, b) => new Date(a.orderDate) - new Date(b.orderDate));
+      console.log(`📅 Date range in filtered data: ${sortedOrders[0]?.orderDate} to ${sortedOrders[sortedOrders.length - 1]?.orderDate}`);
+      
+      // Show status breakdown after filtering
+      const statusCounts = {};
+      allOrders.forEach(order => {
+        const status = order.status || 'Unknown';
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+      });
+      console.log(`📊 Orders status breakdown (after filtering):`, statusCounts);
+    }
   }
   
   return allOrders;
@@ -758,7 +614,7 @@ async function fetchShiprocketShipmentsDirect(token, startDate, endDate) {
     }
   }
   
-  console.log(`✅ Shipments: ${allShipments.length} total records`);
+  console.log(`✅ Shipments: ${allShipments.length} total records (before client-side filtering)`);
   
   // Debug: Show status breakdown
   if (allShipments.length > 0) {
@@ -767,7 +623,35 @@ async function fetchShiprocketShipmentsDirect(token, startDate, endDate) {
       const status = shipment.status || 'Unknown';
       statusCounts[status] = (statusCounts[status] || 0) + 1;
     });
-    console.log(`📊 Shipments status breakdown:`, statusCounts);
+    console.log(`📊 Shipments status breakdown (before filtering):`, statusCounts);
+  }
+  
+  // CRITICAL: Client-side date filtering as backup
+  // Shiprocket API sometimes doesn't filter properly, so we filter again
+  if (startDate && endDate && allShipments.length > 0) {
+    const startDateObj = new Date(startDate + 'T00:00:00');
+    const endDateObj = new Date(endDate + 'T23:59:59');
+    
+    const beforeFilter = allShipments.length;
+    allShipments = allShipments.filter(shipment => {
+      if (!shipment.createdAt) return false;
+      const shipmentDateObj = new Date(shipment.createdAt);
+      return shipmentDateObj >= startDateObj && shipmentDateObj <= endDateObj;
+    });
+    
+    console.log(`🔍 Client-side date filter: ${beforeFilter} → ${allShipments.length} shipments`);
+    if (allShipments.length > 0) {
+      const sortedShipments = [...allShipments].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      console.log(`📅 Date range in filtered data: ${sortedShipments[0]?.createdAt} to ${sortedShipments[sortedShipments.length - 1]?.createdAt}`);
+      
+      // Show status breakdown after filtering
+      const statusCounts = {};
+      allShipments.forEach(shipment => {
+        const status = shipment.status || 'Unknown';
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+      });
+      console.log(`📊 Shipments status breakdown (after filtering):`, statusCounts);
+    }
   }
   
   return allShipments;
@@ -847,25 +731,94 @@ async function getShiprocketToken(userId) {
 }
 
 /**
+ * Get business expenses from database
+ */
+async function getBusinessExpenses(userId) {
+  try {
+    const command = new QueryCommand({
+      TableName: process.env.DYNAMODB_TABLE_NAME || 'Users',
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: {
+        ':userId': userId
+      },
+      ProjectionExpression: 'businessExpenses'
+    });
+    const result = await dynamoDB.send(command);
+    const user = result.Items?.[0];
+    
+    return user?.businessExpenses || {
+      agencyFees: 0,
+      rtoHandlingFees: 0,
+      paymentGatewayFeePercent: 2.5,
+      staffFees: 0,
+      officeRent: 0,
+      otherExpenses: 0
+    };
+  } catch (error) {
+    console.error('Error fetching business expenses:', error.message);
+    return {
+      agencyFees: 0,
+      rtoHandlingFees: 0,
+      paymentGatewayFeePercent: 2.5,
+      staffFees: 0,
+      officeRent: 0,
+      otherExpenses: 0
+    };
+  }
+}
+
+/**
  * Calculate comprehensive metrics using real data
  */
-function calculateComprehensiveMetrics(processedData) {
+function calculateComprehensiveMetrics(processedData, businessExpensesData) {
   const { orders, meta } = processedData;
   
   // Filter delivered orders for revenue calculations
   const deliveredOrders = orders.filter(order => order.isDelivered);
   
+  // Separate prepaid and COD orders
+  const prepaidOrders = deliveredOrders.filter(order => {
+    const paymentMethod = (order.paymentMethod || '').toLowerCase();
+    return paymentMethod === 'prepaid' || paymentMethod === 'online' || paymentMethod === 'card' || paymentMethod === 'upi';
+  });
+  
+  const codOrders = deliveredOrders.filter(order => {
+    const paymentMethod = (order.paymentMethod || '').toLowerCase();
+    return paymentMethod === 'cod' || paymentMethod === 'cash on delivery' || paymentMethod === '';
+  });
+  
   // Revenue calculations from Shiprocket
   const totalRevenue = deliveredOrders.reduce((sum, order) => sum + order.total, 0);
+  const prepaidRevenue = prepaidOrders.reduce((sum, order) => sum + order.total, 0);
+  const codRevenue = codOrders.reduce((sum, order) => sum + order.total, 0);
   const totalShippingCost = deliveredOrders.reduce((sum, order) => sum + order.shippingCost, 0);
   const totalCodCharges = deliveredOrders.reduce((sum, order) => sum + order.codCharges, 0);
+  
+  console.log(`💳 Payment Method Breakdown:`);
+  console.log(`   Prepaid Orders: ${prepaidOrders.length} (₹${prepaidRevenue.toFixed(2)})`);
+  console.log(`   COD Orders: ${codOrders.length} (₹${codRevenue.toFixed(2)})`);
+  console.log(`   Total Revenue: ₹${totalRevenue.toFixed(2)}`);
   
   // Meta advertising data (real data from API)
   const adSpend = meta.totalSpend;
   
-  // Business expenses - for now we'll estimate as 2.5% of revenue
-  // TODO: This could be fetched from a business_expenses table in the future
-  const businessExpenses = totalRevenue * 0.025;
+  // Business expenses - Payment gateway fee only on prepaid orders
+  const paymentGatewayFees = prepaidRevenue * ((businessExpensesData.paymentGatewayFeePercent || 2.5) / 100);
+  const businessExpenses = (businessExpensesData.agencyFees || 0) + 
+                          (businessExpensesData.rtoHandlingFees || 0) + 
+                          (businessExpensesData.staffFees || 0) + 
+                          (businessExpensesData.officeRent || 0) + 
+                          (businessExpensesData.otherExpenses || 0) +
+                          paymentGatewayFees;
+  
+  console.log(`💰 Business Expenses Breakdown:`);
+  console.log(`   Agency Fees: ₹${businessExpensesData.agencyFees || 0}`);
+  console.log(`   RTO Handling: ₹${businessExpensesData.rtoHandlingFees || 0}`);
+  console.log(`   Staff Fees: ₹${businessExpensesData.staffFees || 0}`);
+  console.log(`   Office Rent: ₹${businessExpensesData.officeRent || 0}`);
+  console.log(`   Other: ₹${businessExpensesData.otherExpenses || 0}`);
+  console.log(`   Payment Gateway (${businessExpensesData.paymentGatewayFeePercent || 2.5}% of prepaid ₹${prepaidRevenue.toFixed(2)}): ₹${paymentGatewayFees.toFixed(2)}`);
+  console.log(`   Total Business Expenses: ₹${businessExpenses.toFixed(2)}`);
   
   // COGS - Cannot calculate without product cost data (show as --)
   // This would need to be stored separately per product
@@ -909,9 +862,10 @@ function calculateComprehensiveMetrics(processedData) {
   return [
     // Available metrics with real data
     { title: 'Revenue', value: `₹${totalRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Total revenue from delivered orders' },
+    { title: 'Delivered Orders', value: deliveredCount.toLocaleString('en-IN'), formula: 'Successfully delivered orders by Shiprocket' },
     { title: 'Ad Spend', value: `₹${adSpend.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Total advertising spend from Meta API' },
     { title: 'Shipping Cost', value: `₹${totalShippingCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Total shipping charges from Shiprocket' },
-    { title: 'Business Expenses', value: `₹${businessExpenses.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Estimated business expenses (2.5% of revenue)' },
+    { title: 'Business Expenses', value: `₹${businessExpenses.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Agency fees + RTO + Gateway + Staff + Rent + Other' },
     { title: 'Net Profit', value: `₹${netProfit.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Revenue - Business Expenses - Ad Spend - Shipping Cost' },
     { title: 'Net Profit Margin', value: `${netProfitMargin.toFixed(2)}%`, formula: 'Net Profit / Revenue * 100' },
     { title: 'ROAS', value: `${roas.toFixed(2)}`, formula: 'Return on Ad Spend (Revenue / Ad Spend)' },
@@ -924,10 +878,10 @@ function calculateComprehensiveMetrics(processedData) {
     { title: 'Gross Profit', value: '--', formula: 'Cannot calculate without COGS data' },
     { title: 'Gross Profit Margin', value: '--', formula: 'Cannot calculate without COGS data' },
     
-    // Order metrics
-    { title: 'Delivered Orders', value: deliveredCount.toLocaleString('en-IN'), formula: 'Successfully delivered orders' },
-    { title: 'Delivery Rate', value: `${deliveryRate.toFixed(2)}%`, formula: 'Delivered / Total orders' },
-    { title: 'Total Shipments', value: totalOrders.toLocaleString('en-IN'), formula: 'All orders in date range' },
+    // Order metrics - these should NOT be shown in the main section
+    // { title: 'Delivered Orders', value: deliveredCount.toLocaleString('en-IN'), formula: 'Successfully delivered orders' },
+    // { title: 'Delivery Rate', value: `${deliveryRate.toFixed(2)}%`, formula: 'Delivered / Total orders' },
+    // { title: 'Total Shipments', value: totalOrders.toLocaleString('en-IN'), formula: 'All orders in date range' },
     
     // Status breakdown
     ...statusBreakdown.map(status => ({ ...status, category: 'shipping' }))
@@ -1024,14 +978,31 @@ function calculatePerformanceChart(orders) {
 /**
  * Calculate financial breakdown
  */
-function calculateFinancialBreakdown(processedData) {
+function calculateFinancialBreakdown(processedData, businessExpensesData) {
   const { orders, meta } = processedData;
   
   const deliveredOrders = orders.filter(order => order.isDelivered);
+  
+  // Separate prepaid and COD orders
+  const prepaidOrders = deliveredOrders.filter(order => {
+    const paymentMethod = (order.paymentMethod || '').toLowerCase();
+    return paymentMethod === 'prepaid' || paymentMethod === 'online' || paymentMethod === 'card' || paymentMethod === 'upi';
+  });
+  
   const revenue = deliveredOrders.reduce((sum, order) => sum + order.total, 0);
+  const prepaidRevenue = prepaidOrders.reduce((sum, order) => sum + order.total, 0);
   const shippingCost = deliveredOrders.reduce((sum, order) => sum + order.shippingCost, 0);
   const adSpend = meta.totalSpend;
-  const businessExpenses = revenue * 0.025;
+  
+  // Business expenses - Payment gateway fee only on prepaid orders
+  const paymentGatewayFees = prepaidRevenue * ((businessExpensesData.paymentGatewayFeePercent || 2.5) / 100);
+  const businessExpenses = (businessExpensesData.agencyFees || 0) + 
+                          (businessExpensesData.rtoHandlingFees || 0) + 
+                          (businessExpensesData.staffFees || 0) + 
+                          (businessExpensesData.officeRent || 0) + 
+                          (businessExpensesData.otherExpenses || 0) +
+                          paymentGatewayFees;
+  
   const netProfit = revenue - businessExpenses - adSpend - shippingCost;
   
   const pieData = [

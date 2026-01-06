@@ -74,6 +74,7 @@ environment:
 
 ### Step 1: Update `.env` file
 Copy contents from `.env.local` to `.env`:
+
 ```bash
 copy Auth-service\.env.local Auth-service\.env
 ```

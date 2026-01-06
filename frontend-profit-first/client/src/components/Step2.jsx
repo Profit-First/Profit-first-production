@@ -10,6 +10,7 @@ const Step2 = ({ onComplete }) => {
   const [loading, setLoading] = useState(false);
 
   const handleConnect = async () => {
+    console.log("connting starts");
     if (!storeUrl) {
       return toast.error("Please enter your store URL");
     }
@@ -188,14 +189,26 @@ const Step2 = ({ onComplete }) => {
 
   const handleDone = async () => {
     if (!storeUrl) {
-      return toast.error("Please enter your store URL");
+      return toast.error("Please enter your store URL and connect first");
     }
 
-    console.log("🚀 Step 2 - Completing Shopify connection step...");
+    console.log("🚀 Step 2 - Verifying Shopify connection...");
     console.log("📦 Store URL:", storeUrl);
 
     setLoading(true);
     try {
+      // First, verify that Shopify connection exists
+      console.log("🔍 Checking if Shopify is connected...");
+      
+      const verifyResponse = await axiosInstance.get("/shopify/connection");
+      
+      if (!verifyResponse.data.connected) {
+        toast.error("❌ Please connect your Shopify store first before proceeding");
+        setLoading(false);
+        return;
+      }
+      
+      console.log("✅ Shopify connection verified!");
       console.log("📡 Sending POST request to /onboard/step...");
       
       const response = await axiosInstance.post("/onboard/step", {
@@ -233,6 +246,8 @@ const Step2 = ({ onComplete }) => {
             localStorage.clear();
             window.location.href = '/login';
           }, 2000);
+        } else if (err.response.status === 404) {
+          errorMessage = "❌ Shopify not connected. Please click 'Connect' first.";
         }
       } else if (err.request) {
         errorMessage = "Cannot connect to server. Is the backend running?";

@@ -61,43 +61,8 @@ class OnboardingController {
       await deleteCache(cacheKey);
       console.log(`🗑️  Cache invalidated: ${cacheKey}`);
 
-      // Trigger background Shopify sync after Step 2 (Shopify connection completed)
-      if (step === 2 && data.storeUrl && data.connected) {
-        console.log(`\n🚀 Step 2 completed - Starting background Shopify sync...`);
-        
-        // Run sync in background using setImmediate to not block response
-        setImmediate(async () => {
-          try {
-            // Get access token from database
-            const { GetCommand } = require('@aws-sdk/lib-dynamodb');
-            const { dynamoDB } = require('../config/aws.config');
-            
-            const connectionCommand = new GetCommand({
-              TableName: process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_connections',
-              Key: { userId }
-            });
-            
-            const connectionResult = await dynamoDB.send(connectionCommand);
-            
-            if (!connectionResult.Item || !connectionResult.Item.accessToken) {
-              console.error(`❌ No Shopify connection found for background sync`);
-              return;
-            }
-            
-            const { shopUrl, accessToken } = connectionResult.Item;
-            console.log(`   Starting background sync for shop: ${shopUrl}`);
-            
-            // Start background sync (non-blocking)
-            await shopifyBackgroundSync.startBackgroundSync(userId, shopUrl, accessToken);
-            
-            console.log(`✅ Background sync initiated for user: ${userId}`);
-          } catch (error) {
-            console.error(`❌ Background sync initiation error for user: ${userId}`, error.message);
-          }
-        });
-        
-        console.log(`✅ Background sync will start shortly - user can proceed with onboarding`);
-      }
+      // DON'T trigger sync at Step 2 - prevents 401 errors during onboarding
+      // Sync will happen later after user completes onboarding
 
       res.status(200).json({
         message: 'Onboarding step updated successfully',
@@ -409,18 +374,31 @@ class OnboardingController {
 
       const { shopUrl, accessToken } = result.Item;
       console.log(`   Shop: ${shopUrl}`);
+      console.log(`   Access Token: ${accessToken ? accessToken.substring(0, 20) + '...' : 'MISSING'}`);
+
+      if (!accessToken) {
+        console.error(`❌ No access token in connection for user: ${userId}`);
+        return res.status(401).json({ 
+          error: 'No access token found',
+          message: 'Please reconnect your Shopify store'
+        });
+      }
 
       // Fetch products from Shopify
       const axios = require('axios');
+      
+      console.log(`   📡 Calling Shopify API: https://${shopUrl}/admin/api/2024-10/products.json`);
+      
       const response = await axios.get(
-        `https://${shopUrl}/admin/api/2025-10/products.json`,
+        `https://${shopUrl}/admin/api/2024-10/products.json`,
         {
           headers: {
             'X-Shopify-Access-Token': accessToken
           },
           params: {
             limit: 250 // Max products per request
-          }
+          },
+          timeout: 10000 // 10 second timeout
         }
       );
 
@@ -468,6 +446,23 @@ class OnboardingController {
 
     } catch (error) {
       console.error('❌ Fetch products error:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      
+      // Detailed error logging
+      if (error.response) {
+        console.error('❌ Shopify API error response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+        
+        return res.status(error.response.status).json({ 
+          error: 'Shopify API error',
+          message: error.response.data?.errors || error.message,
+          details: error.response.data
+        });
+      }
+      
       res.status(500).json({ 
         error: 'Failed to fetch products',
         message: error.message 

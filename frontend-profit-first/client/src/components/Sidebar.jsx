@@ -103,8 +103,22 @@ const Sidebar = () => {
               </NavLink>
 
 
+  <div className="relative group">
+                <div
+                  className="flex items-center gap-2 p-2 2xl:p-3 rounded-lg transition-colors text-sm 2xl:text-base text-gray-600 cursor-not-allowed opacity-60"
+                >
+                  <FiZap className="w-4 h-4 2xl:w-5 2xl:h-5" />
+                  <span>Customer Analytics</span>
+                  <span className="ml-auto text-[10px] bg-gray-800 px-1.5 py-0.5 rounded">Soon</span>
+                </div>
+                {/* Tooltip on hover */}
+                <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none shadow-lg border border-gray-700">
+                  🚀 Coming soon with this feature!
+                </div>
+              </div>
 
-              <NavLink
+
+              {/* <NavLink
                 to="/dashboard/analytics"
                 onClick={() => setIsOpen(false)}
                 className={({ isActive }) =>
@@ -115,7 +129,7 @@ const Sidebar = () => {
                 <FiBarChart2 className="w-4 h-4 2xl:w-5 2xl:h-5" />
                 <span>Customer Analytics</span>
                 <span className="ml-auto bg-green-500/20 text-green-400 text-[10px] 2xl:text-xs px-1.5 py-0.5 rounded">β</span>
-              </NavLink>
+              </NavLink> */}
 
               <NavLink
                 to="/dashboard/products"

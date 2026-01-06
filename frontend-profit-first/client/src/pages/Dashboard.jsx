@@ -226,7 +226,8 @@ const Dashboard = () => {
       console.log('🚀 Fetching Shiprocket data:', {
         startDate: startDateString,
         endDate: endDateString,
-        userId
+        userId,
+        timestamp: new Date().toISOString()
       });
 
       try {
@@ -234,7 +235,8 @@ const Dashboard = () => {
           params: {
             startDate: startDateString,
             endDate: endDateString,
-            userId: userId
+            userId: userId,
+            _t: Date.now() // Cache buster
           },
         });
 
@@ -445,15 +447,12 @@ const Dashboard = () => {
           </div>
         </div>
       ) : shiprocketData && shiprocketData.summary ? (
-        <div className="bg-gradient-to-br from-[#001a1a] to-[#00131C] rounded-2xl p-6 border border-green-500/20">
+        <div className="bg-gradient-to-br from-[#001a1a] to-[#00131C] rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
               📦 Shiprocket + Meta Data
               <span className="text-xs bg-green-500/20 text-green-400 px-2 py-1 rounded">Live API</span>
             </h3>
-            {shiprocketData.metadata?.hasMetaData && (
-              <span className="text-xs text-green-400">✅ Meta Connected</span>
-            )}
           </div>
           
           {/* Extract Shiprocket metrics */}
@@ -462,7 +461,7 @@ const Dashboard = () => {
             
             // Available metrics (with real data)
             const availableMetrics = shiprocketSummary.filter(card => 
-              ['Revenue', 'Ad Spend', 'Shipping Cost', 'Business Expenses', 'Net Profit', 'Net Profit Margin', 'ROAS', 'POAS', 'AOV', 'CPP'].includes(card.title) && 
+              ['Revenue', 'Delivered Orders', 'Ad Spend', 'Shipping Cost', 'Business Expenses', 'Net Profit', 'Net Profit Margin', 'ROAS', 'POAS', 'AOV', 'CPP'].includes(card.title) && 
               card.value !== '--'
             );
             
@@ -477,9 +476,6 @@ const Dashboard = () => {
                 {/* Available Metrics */}
                 {availableMetrics.length > 0 && (
                   <div className="mb-4">
-                    <h4 className="text-sm text-green-400 mb-3 flex items-center gap-2">
-                      ✅ Available Metrics (Shiprocket + Meta Data)
-                    </h4>
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                       {availableMetrics.map(({ title, value, formula }) => (
                         <Card key={title} title={title} value={value} formula={formula} />
@@ -491,9 +487,6 @@ const Dashboard = () => {
                 {/* Unavailable Metrics */}
                 {unavailableMetrics.length > 0 && (
                   <div>
-                    <h4 className="text-sm text-red-400 mb-3 flex items-center gap-2">
-                      ❌ Not Available (Requires COGS Data)
-                    </h4>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                       {unavailableMetrics.map(({ title, value, formula }) => (
                         <Card key={title} title={title} value={value} formula={formula} />
@@ -591,21 +584,81 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div className="bg-[#00131C] rounded-2xl p-6">
-        <h3 className="text-xl font-bold text-white mb-6">Cost Breakdown</h3>
-        <div className="flex items-center justify-center">
-          {pieData.length > 0 ? (
-            <AnimatedPieChart
-              data={pieData}
-              centerLabel="Revenue"
-              centerValue={`₹${revenueValue.toLocaleString("en-IN")}`}
-              size={550}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-64 text-gray-400">
-              No breakdown data
-            </div>
-          )}
+      {/* Cost Breakdown - Two Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left: Main Cost Breakdown */}
+        <div className="bg-[#00131C] rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-white mb-6">🛍️ Shopify Breakdown</h3>
+          <div className="flex items-center justify-center">
+            {pieData.length > 0 ? (
+              <AnimatedPieChart
+                data={pieData}
+                centerLabel="Revenue"
+                centerValue={`₹${revenueValue.toLocaleString("en-IN")}`}
+                size={450}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-400">
+                No breakdown data
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Shiprocket Cost Breakdown */}
+        <div className="bg-[#00131C] rounded-2xl p-6">
+          <h3 className="text-xl font-bold text-white mb-6">📦 Shiprocket Breakdown</h3>
+          <div className="flex items-center justify-center">
+            {(() => {
+              if (!shiprocketData || !shiprocketData.summary) {
+                return (
+                  <div className="flex items-center justify-center h-64 text-gray-400">
+                    No Shiprocket data
+                  </div>
+                );
+              }
+
+              const shiprocketSummary = shiprocketData.summary || [];
+              
+              // Extract values for pie chart
+              const findValue = (title) => {
+                const card = shiprocketSummary.find(c => c.title === title);
+                if (!card || card.value === '--') return 0;
+                const numValue = parseFloat(String(card.value).replace(/[^0-9.-]/g, ''));
+                return isNaN(numValue) ? 0 : Math.abs(numValue);
+              };
+
+              const revenue = findValue('Revenue');
+              const adSpend = findValue('Ad Spend');
+              const shippingCost = findValue('Shipping Cost');
+              const businessExpenses = findValue('Business Expenses');
+              const netProfit = findValue('Net Profit');
+
+              const shiprocketPieData = [
+                { name: 'Ad Spend', value: adSpend, color: '#2d6a4f' },
+                { name: 'Shipping Cost', value: shippingCost, color: '#1a4037' },
+                { name: 'Business Expenses', value: businessExpenses, color: '#0d2923' },
+                { name: 'Net Profit', value: Math.max(0, netProfit), color: '#40916c' },
+              ].filter(item => item.value > 0);
+
+              if (shiprocketPieData.length === 0) {
+                return (
+                  <div className="flex items-center justify-center h-64 text-gray-400">
+                    No cost data available
+                  </div>
+                );
+              }
+
+              return (
+                <AnimatedPieChart
+                  data={shiprocketPieData}
+                  centerLabel="Revenue"
+                  centerValue={`₹${revenue.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`}
+                  size={450}
+                />
+              );
+            })()}
+          </div>
         </div>
       </div>
 
