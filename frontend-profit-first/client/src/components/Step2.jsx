@@ -44,109 +44,88 @@ const Step2 = ({ onComplete }) => {
 
       // Use the authUrl from backend response
       if (response.data.success && response.data.authUrl) {
-        const popup = window.open(response.data.authUrl, "_blank", "width=800,height=600");
+        // Open in new tab instead of popup (better for Shopify OAuth)
+        window.open(response.data.authUrl, "_blank");
         
-        if (popup) {
-          toast.info("🔗 Opening Shopify authorization...", { autoClose: 2000 });
+        toast.info("🔗 Opening Shopify authorization in new tab...", { autoClose: 2000 });
+        
+        setTimeout(() => {
+          toast.info("📱 Please authorize the app in the new tab, then click 'Next' to continue", { autoClose: false });
+        }, 2000);
+        
+        // Poll to check if OAuth is complete by fetching token
+        let pollCount = 0;
+        const maxPolls = 150; // 5 minutes (150 * 2 seconds)
+        
+        const checkInterval = setInterval(async () => {
+          pollCount++;
           
-          setTimeout(() => {
-            toast.info("📱 Please authorize the app in the popup window", { autoClose: false });
-          }, 2000);
+          // Stop polling after max attempts
+          if (pollCount >= maxPolls) {
+            clearInterval(checkInterval);
+            console.log("⏱️ Polling timeout - please click Next manually");
+            setLoading(false);
+            return;
+          }
           
-          // Poll to check if OAuth is complete by fetching token
-          let pollCount = 0;
-          const maxPolls = 150; // 5 minutes (150 * 2 seconds)
-          
-          const checkInterval = setInterval(async () => {
-            pollCount++;
+          try {
+            // Try to fetch token via backend proxy (to avoid CORS)
+            console.log(`🔍 Checking for token... (attempt ${pollCount})`);
+            const tokenResponse = await axiosInstance.get('/onboard/proxy/token', {
+              params: {
+                shop: correctedStoreUrl,
+                password: 'Sachin369'
+              }
+            });
             
-            // Stop polling after max attempts
-            if (pollCount >= maxPolls) {
+            if (tokenResponse.data && tokenResponse.data.accessToken) {
               clearInterval(checkInterval);
-              console.log("⏱️ Polling timeout - please click Next manually");
-              return;
-            }
-            
-            try {
-              // Try to fetch token via backend proxy (to avoid CORS)
-              console.log(`🔍 Checking for token... (attempt ${pollCount})`);
-              const tokenResponse = await axiosInstance.get('/onboard/proxy/token', {
-                params: {
-                  shop: correctedStoreUrl,
-                  password: 'Sachin369'
-                }
-              });
               
-              if (tokenResponse.data && tokenResponse.data.accessToken) {
-                clearInterval(checkInterval);
+              const accessToken = tokenResponse.data.accessToken;
+              console.log("✅ Access token received:", accessToken.substring(0, 20) + "...");
+              
+              toast.dismiss(); // Clear previous toasts
+              toast.success("✅ Authorization successful! Connecting your store...", { autoClose: 2000 });
+              
+              // Send token to backend to save
+              try {
+                await axiosInstance.post("/shopify/callback", {
+                  userId: localStorage.getItem('userId'),
+                  shopUrl: correctedStoreUrl,
+                  accessToken: accessToken
+                }, {
+                  headers: {
+                    'X-Shopify-Access-Token': accessToken
+                  }
+                });
                 
-                const accessToken = tokenResponse.data.accessToken;
-                console.log("✅ Access token received:", accessToken.substring(0, 20) + "...");
+                console.log("✅ Connection saved to backend");
+                toast.success("✅ Store connected successfully!", { autoClose: 3000 });
                 
-                // Close popup if still open
-                if (popup && !popup.closed) {
-                  popup.close();
-                }
+                // CRITICAL: Stop loading and show message to click Next
+                setLoading(false);
+                setTimeout(() => {
+                  toast.info("👉 Click 'Next' to continue to product setup", { autoClose: false });
+                }, 2000);
                 
-                toast.dismiss(); // Clear previous toasts
-                toast.success("✅ Authorization successful! Connecting your store...", { autoClose: 2000 });
-                
-                // Send token to backend to save
-                try {
-                  await axiosInstance.post("/shopify/callback", {
-                    userId: localStorage.getItem('userId'),
-                    shopUrl: correctedStoreUrl,
-                    accessToken: accessToken
-                  }, {
-                    headers: {
-                      'X-Shopify-Access-Token': accessToken
-                    }
-                  });
-                  
-                  console.log("✅ Connection saved to backend");
-                  toast.success("✅ Store connected successfully!", { autoClose: 2000 });
-                  
-                  // Save onboarding step and move to next
-                  setTimeout(async () => {
-                    toast.info("📊 Preparing your dashboard...", { autoClose: 2000 });
-                    
-                    try {
-                      await axiosInstance.post("/onboard/step", {
-                        step: 2,
-                        data: {
-                          platform: platform,
-                          storeUrl: correctedStoreUrl,
-                          connected: true,
-                          connectedAt: new Date().toISOString()
-                        }
-                      });
-                      
-                      toast.success("🎉 Moving to next step!", { autoClose: 1000 });
-                      setTimeout(() => onComplete(), 1000);
-                    } catch (err) {
-                      console.error("Error saving step:", err);
-                      toast.error("❌ Connected but failed to save. Please click Next.");
-                    }
-                  }, 1000);
-                } catch (err) {
-                  console.error("Error saving connection:", err);
-                  toast.error("❌ Failed to save connection. Please try connecting again.");
-                }
-              }
-            } catch (err) {
-              // Token not ready yet or error, keep polling
-              if (err.response?.status === 404) {
-                // Token not found yet, keep waiting
-              } else if (err.response?.status !== 403) {
-                console.error("Token fetch error:", err.message);
+              } catch (err) {
+                console.error("Error saving connection:", err);
+                toast.error("❌ Failed to save connection. Please try connecting again.");
+                setLoading(false);
               }
             }
-          }, 2000); // Check every 2 seconds
-        } else {
-          toast.error("Popup blocked! Please allow popups for this site.");
-        }
+          } catch (err) {
+            // Token not ready yet or error, keep polling
+            if (err.response?.status === 404) {
+              // Token not found yet, keep waiting
+            } else if (err.response?.status !== 403) {
+              console.error("Token fetch error:", err.message);
+            }
+          }
+        }, 2000); // Check every 2 seconds
       } else {
         toast.error("❌ Failed to get authorization URL. Please try again.");
+        setLoading(false);
       }
     } catch (err) {
       console.error("❌ Connection error:", err);
