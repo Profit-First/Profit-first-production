@@ -1,16 +1,16 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { toast } from "react-toastify";
 import axiosInstance from "../../axios";
-import axios from "axios";
 import { PulseLoader } from "react-spinners";
 
 const Step2 = ({ onComplete }) => {
   const [platform, setPlatform] = useState("Shopify");
   const [storeUrl, setStoreUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   const handleConnect = async () => {
-    console.log("connting starts");
+    console.log("🔗 Connect button clicked");
     if (!storeUrl) {
       return toast.error("Please enter your store URL");
     }
@@ -31,6 +31,8 @@ const Step2 = ({ onComplete }) => {
     console.log("📍 Store URL:", correctedStoreUrl);
 
     setLoading(true);
+    setIsConnected(false);
+    
     try {
       // Call backend to initiate connection
       const response = await axiosInstance.post("/shopify/connect", {
@@ -44,124 +46,130 @@ const Step2 = ({ onComplete }) => {
 
       // Use the authUrl from backend response
       if (response.data.success && response.data.authUrl) {
-        // Open in new tab instead of popup (better for Shopify OAuth)
+        // Open in new tab for Shopify OAuth
         window.open(response.data.authUrl, "_blank");
         
-        toast.info("🔗 Opening Shopify authorization in new tab...", { autoClose: 2000 });
+        toast.info("🔗 Opening Shopify in new tab. Please install the app there.", { autoClose: 5000 });
         
-        setTimeout(() => {
-          toast.info("📱 Please authorize the app in the new tab, then click 'Next' to continue", { autoClose: false });
-        }, 2000);
+        // Stop loading - user needs to install app manually
+        setLoading(false);
         
-        // Poll to check if OAuth is complete by fetching token
-        let pollCount = 0;
-        const maxPolls = 150; // 5 minutes (150 * 2 seconds)
+        toast.info("📱 After installing the app, click 'Verify Connection' below", { autoClose: false });
         
-        const checkInterval = setInterval(async () => {
-          pollCount++;
-          
-          // Stop polling after max attempts
-          if (pollCount >= maxPolls) {
-            clearInterval(checkInterval);
-            console.log("⏱️ Polling timeout - please click Next manually");
-            setLoading(false);
-            return;
-          }
-          
-          try {
-            // Try to fetch token via backend proxy (to avoid CORS)
-            console.log(`🔍 Checking for token... (attempt ${pollCount})`);
-            const tokenResponse = await axiosInstance.get('/onboard/proxy/token', {
-              params: {
-                shop: correctedStoreUrl,
-                password: 'Sachin369'
-              }
-            });
-            
-            if (tokenResponse.data && tokenResponse.data.accessToken) {
-              clearInterval(checkInterval);
-              
-              const accessToken = tokenResponse.data.accessToken;
-              console.log("✅ Access token received:", accessToken.substring(0, 20) + "...");
-              
-              toast.dismiss(); // Clear previous toasts
-              toast.success("✅ Authorization successful! Connecting your store...", { autoClose: 2000 });
-              
-              // Send token to backend to save
-              try {
-                await axiosInstance.post("/shopify/callback", {
-                  userId: localStorage.getItem('userId'),
-                  shopUrl: correctedStoreUrl,
-                  accessToken: accessToken
-                }, {
-                  headers: {
-                    'X-Shopify-Access-Token': accessToken
-                  }
-                });
-                
-                console.log("✅ Connection saved to backend");
-                toast.success("✅ Store connected successfully!", { autoClose: 3000 });
-                
-                // CRITICAL: Stop loading and show message to click Next
-                setLoading(false);
-                setTimeout(() => {
-                  toast.info("👉 Click 'Next' to continue to product setup", { autoClose: false });
-                }, 2000);
-                
-              } catch (err) {
-                console.error("Error saving connection:", err);
-                toast.error("❌ Failed to save connection. Please try connecting again.");
-                setLoading(false);
-              }
-            }
-          } catch (err) {
-            // Token not ready yet or error, keep polling
-            if (err.response?.status === 404) {
-              // Token not found yet, keep waiting
-            } else if (err.response?.status !== 403) {
-              console.error("Token fetch error:", err.message);
-            }
-          }
-        }, 2000); // Check every 2 seconds
       } else {
         toast.error("❌ Failed to get authorization URL. Please try again.");
         setLoading(false);
       }
     } catch (err) {
       console.error("❌ Connection error:", err);
-      console.error("❌ Error response:", err.response?.data);
       
       let errorMessage = "❌ Failed to connect to Shopify";
       
       if (err.response) {
         const backendError = err.response.data?.message || err.response.data?.error;
         
-        switch (err.response.status) {
-          case 400:
-            errorMessage = `❌ Invalid store URL: ${backendError || "Please check your store name"}`;
-            break;
-          case 401:
-            errorMessage = "🔒 Session expired. Please login again.";
-            setTimeout(() => {
-              localStorage.clear();
-              window.location.href = '/login';
-            }, 2000);
-            break;
-          case 404:
-            errorMessage = "❌ Store not found. Please check your store URL.";
-            break;
-          case 500:
-            errorMessage = `❌ Server error: ${backendError || "Please try again later"}`;
-            break;
-          default:
-            errorMessage = backendError || errorMessage;
+        if (err.response.status === 400) {
+          errorMessage = `❌ Invalid store URL: ${backendError || "Please check your store name"}`;
+        } else if (err.response.status === 404) {
+          errorMessage = "❌ Store not found. Please check your store URL.";
+        } else if (err.response.status === 500) {
+          errorMessage = `❌ Server error: ${backendError || "Please try again later"}`;
+        } else {
+          errorMessage = backendError || errorMessage;
         }
       } else if (err.request) {
         errorMessage = "🔌 Cannot connect to server. Please check your internet connection.";
       }
       
       toast.error(errorMessage, { autoClose: 5000 });
-    } finally {
+      setLoading(false);
+    }
+  };
+
+  // New function to verify connection after user installs app
+  const handleVerifyConnection = async () => {
+    if (!storeUrl) {
+      return toast.error("Please enter your store URL first");
+    }
+
+    let correctedStoreUrl = storeUrl.trim().toLowerCase();
+    if (!correctedStoreUrl.includes('.myshopify.com')) {
+      correctedStoreUrl = `${correctedStoreUrl}.myshopify.com`;
+    }
+
+    console.log("🔍 Verifying Shopify connection...");
+    setLoading(true);
+    
+    try {
+      // Step 1: Get token from external service
+      console.log("📡 Fetching token from external service...");
+      toast.info("🔍 Checking for access token...", { autoClose: 2000 });
+      
+      const tokenResponse = await axiosInstance.get('/onboard/proxy/token', {
+        params: {
+          shop: correctedStoreUrl,
+          password: 'Sachin369'
+        }
+      });
+      
+      if (!tokenResponse.data || !tokenResponse.data.accessToken) {
+        toast.error("❌ No access token found. Please install the app in Shopify first.");
+        setLoading(false);
+        return;
+      }
+      
+      const accessToken = tokenResponse.data.accessToken;
+      console.log("✅ Token received:", accessToken.substring(0, 20) + "...");
+      
+      // Step 2: Test the token by calling Shopify API directly via backend
+      console.log("🔐 Testing token with Shopify API...");
+      toast.info("🔐 Verifying token with Shopify...", { autoClose: 2000 });
+      
+      try {
+        // Save token to backend (backend will verify it)
+        const saveResponse = await axiosInstance.post("/shopify/callback", {
+          userId: localStorage.getItem('userId'),
+          shopUrl: correctedStoreUrl,
+          accessToken: accessToken
+        }, {
+          headers: {
+            'X-Shopify-Access-Token': accessToken
+          }
+        });
+        
+        if (saveResponse.data.success) {
+          console.log("✅ Token verified and saved!");
+          toast.dismiss();
+          toast.success("✅ Shopify store connected successfully!", { autoClose: 3000 });
+          setIsConnected(true);
+          setLoading(false);
+          
+          setTimeout(() => {
+            toast.info("👉 Click 'Next' to continue to product setup", { autoClose: false });
+          }, 2000);
+        } else {
+          throw new Error("Failed to save connection");
+        }
+        
+      } catch (saveError) {
+        console.error("❌ Token verification failed:", saveError);
+        
+        if (saveError.response?.status === 401) {
+          toast.error("❌ Invalid token. Please make sure you installed the app in Shopify.", { autoClose: 5000 });
+        } else {
+          toast.error("❌ Failed to verify connection. Please try again.", { autoClose: 5000 });
+        }
+        setLoading(false);
+      }
+      
+    } catch (err) {
+      console.error("❌ Verify connection error:", err);
+      
+      if (err.response?.status === 404) {
+        toast.error("❌ No token found. Please install the app in Shopify first.", { autoClose: 5000 });
+      } else {
+        toast.error("❌ Failed to verify connection. Please try again.", { autoClose: 5000 });
+      }
       setLoading(false);
     }
   };
@@ -171,7 +179,7 @@ const Step2 = ({ onComplete }) => {
       return toast.error("Please enter your store URL and connect first");
     }
 
-    console.log("🚀 Step 2 - Verifying Shopify connection...");
+    console.log("🚀 Step 2 - Proceeding to next step...");
     console.log("📦 Store URL:", storeUrl);
 
     setLoading(true);
@@ -182,13 +190,48 @@ const Step2 = ({ onComplete }) => {
       const verifyResponse = await axiosInstance.get("/shopify/connection");
       
       if (!verifyResponse.data.connected) {
-        toast.error("❌ Please connect your Shopify store first before proceeding");
+        toast.error("❌ Please connect your Shopify store first. Click 'Connect' then 'Verify Connection'.");
         setLoading(false);
         return;
       }
       
-      console.log("✅ Shopify connection verified!");
-      console.log("📡 Sending POST request to /onboard/step...");
+      console.log("✅ Shopify connection exists in database");
+      
+      // Test the access token by fetching products
+      console.log("🔐 Testing access token with Shopify API...");
+      toast.info("🔐 Verifying your Shopify connection...", { autoClose: 2000 });
+      
+      try {
+        const testResponse = await axiosInstance.get("/onboard/fetchproduct", {
+          timeout: 15000
+        });
+        
+        if (!testResponse.data.success) {
+          throw new Error("Failed to fetch products");
+        }
+        
+        console.log("✅ Access token verified! Products fetched successfully");
+        console.log(`   Found ${testResponse.data.count} products`);
+        
+      } catch (tokenError) {
+        console.error("❌ Access token verification failed:", tokenError);
+        
+        let errorMsg = "❌ Connection invalid. Please click 'Connect' and reinstall the app.";
+        
+        if (tokenError.response?.status === 401) {
+          errorMsg = "❌ Access token expired. Please click 'Connect' to reconnect.";
+        } else if (tokenError.response?.status === 404) {
+          errorMsg = "❌ No Shopify connection found. Please click 'Connect' first.";
+        }
+        
+        toast.error(errorMsg, { autoClose: 5000 });
+        setIsConnected(false);
+        setLoading(false);
+        return;
+      }
+      
+      // Save step and proceed
+      console.log("📡 Saving step 2...");
       
       const response = await axiosInstance.post("/onboard/step", {
         step: 2,
@@ -200,40 +243,20 @@ const Step2 = ({ onComplete }) => {
         }
       });
 
-      console.log("✅ Response received:", response.data);
+      console.log("✅ Step 2 completed:", response.data);
       toast.success("✅ Step 2 completed!");
       onComplete();
+      
     } catch (err) {
-      console.error("❌ Step 2 submission error:", err);
-      console.error("❌ Error details:", {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status
-      });
-
+      console.error("❌ Step 2 error:", err);
+      
       let errorMessage = "Failed to complete step. Please try again.";
       
-      if (err.response) {
-        const backendError = err.response.data?.error || err.response.data?.message;
-        if (backendError) {
-          errorMessage = backendError;
-        }
-        
-        if (err.response.status === 401) {
-          errorMessage = "Session expired. Please login again.";
-          setTimeout(() => {
-            localStorage.clear();
-            window.location.href = '/login';
-          }, 2000);
-        } else if (err.response.status === 404) {
-          errorMessage = "❌ Shopify not connected. Please click 'Connect' first.";
-        }
-      } else if (err.request) {
-        errorMessage = "Cannot connect to server. Is the backend running?";
+      if (err.response?.status === 404) {
+        errorMessage = "❌ Shopify not connected. Please click 'Connect' first.";
       }
       
       toast.error(errorMessage);
-    } finally {
       setLoading(false);
     }
   };
@@ -333,19 +356,39 @@ const Step2 = ({ onComplete }) => {
           />
 
           {/* Buttons */}
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={handleDone}
-              className="px-6 py-2.5 rounded-full bg-[#4A4A4A] text-white text-sm font-semibold transition hover:bg-gray-500"
-            >
-              Next
-            </button>
-            <button
-              onClick={handleConnect}
-              className="px-6 py-2.5 rounded-full bg-white text-black text-sm font-semibold hover:bg-gray-100 transition"
-            >
-              Connect
-            </button>
+          <div className="flex flex-col gap-3">
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={handleVerifyConnection}
+                className="px-6 py-2.5 rounded-full bg-[#2E7D32] text-white text-sm font-semibold transition hover:bg-[#1B5E20]"
+              >
+                Verify Connection
+              </button>
+              <button
+                onClick={handleConnect}
+                className="px-6 py-2.5 rounded-full bg-white text-black text-sm font-semibold hover:bg-gray-100 transition"
+              >
+                Connect
+              </button>
+            </div>
+            {isConnected && (
+              <div className="flex justify-end">
+                <button
+                  onClick={handleDone}
+                  className="px-6 py-2.5 rounded-full bg-white text-black text-sm font-semibold hover:bg-gray-100 transition"
+                >
+                  Next →
+                </button>
+              </div>
+            )}
+            {!isConnected && (
+              <p className="text-center text-xs text-gray-500 mt-2">
+                1. Click "Connect" to open Shopify<br/>
+                2. Install the app in Shopify<br/>
+                3. Click "Verify Connection"<br/>
+                4. Click "Next" to continue
+              </p>
+            )}
           </div>
         </div>
         {/* RIGHT VIDEO SECTION */}

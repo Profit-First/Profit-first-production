@@ -176,14 +176,24 @@ class ShopifyController {
         console.log(`   Store Name: ${storeInfo.name}`);
         console.log(`   Store Email: ${storeInfo.email}`);
       } catch (error) {
-        console.warn('⚠️  Token verification failed, but continuing anyway:', error.message);
-        console.log(`   Using fallback store info`);
-        // Don't return error - the external service already validated the token
-        // Just use the fallback store info
+        console.error('❌ Token verification FAILED:', error.message);
+        if (error.response) {
+          console.error(`   Status: ${error.response.status}`);
+          console.error(`   Error: ${JSON.stringify(error.response.data)}`);
+        }
+        
+        // CRITICAL: If token verification fails, don't save the connection
+        return res.status(401).json({
+          error: 'Invalid access token',
+          message: 'The access token provided is invalid or expired. Please try connecting again.',
+          details: error.response?.data || error.message
+        });
       }
 
       // Save connection to database
       console.log(`💾 Saving connection to database...`);
+      console.log(`   🔑 Full Access Token Length: ${accessToken.length} characters`);
+      console.log(`   🔑 Access Token: ${accessToken}`);
       
       const command = new PutCommand({
         TableName: CONNECTIONS_TABLE,
@@ -206,6 +216,17 @@ class ShopifyController {
       });
 
       await dynamoDB.send(command);
+
+      // Verify what was saved by reading it back
+      console.log(`🔍 Verifying saved token...`);
+      const verifyCommand = new GetCommand({
+        TableName: CONNECTIONS_TABLE,
+        Key: { userId }
+      });
+      const verifyResult = await dynamoDB.send(verifyCommand);
+      console.log(`   ✅ Token in DB Length: ${verifyResult.Item?.accessToken?.length || 0} characters`);
+      console.log(`   ✅ Token in DB: ${verifyResult.Item?.accessToken || 'NOT FOUND'}`);
+      console.log(`   ✅ Tokens Match: ${verifyResult.Item?.accessToken === accessToken}`);
 
       // Clean up pending connection
       if (pendingConnection) {
