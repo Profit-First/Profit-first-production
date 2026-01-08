@@ -98,4 +98,7 @@ router.get('/shiprocket-debug', authenticateToken, async (req, res) => {
 // GET /api/data/sync-status - Get sync status
 router.get('/sync-status', authenticateToken, dashboardController.getSyncStatus);
 
+// POST /api/data/sync-shopify - Manual Shopify sync (last 3 months)
+router.post('/sync-shopify', authenticateToken, dashboardController.syncShopifyOrders);
+
 module.exports = router;

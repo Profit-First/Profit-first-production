@@ -95,6 +95,7 @@ async function fetchOrdersDirectly(token, options = {}) {
     } = options;
     
     console.log(`📊 Fetch settings: ${perPage} records per page, max ${maxPages} pages`);
+    console.log(`📅 Date range: ${startDate} to ${endDate}`);
     
     // Step 1: Fetch Orders (contains revenue data)
     console.log(`📦 Step 1: Fetching orders from Shiprocket API...`);
@@ -106,13 +107,31 @@ async function fetchOrdersDirectly(token, options = {}) {
     
     // Step 3: Merge orders and shipments data
     console.log(`🔗 Step 3: Merging orders and shipments data...`);
-    const mergedData = mergeOrdersAndShipments(ordersData, shipmentsData);
+    let mergedData = mergeOrdersAndShipments(ordersData, shipmentsData);
+    
+    // Step 4: Apply client-side date filtering (backup if API filter didn't work)
+    if (startDate && endDate) {
+      const start = new Date(startDate + 'T00:00:00');
+      const end = new Date(endDate + 'T23:59:59');
+      const beforeFilter = mergedData.length;
+      
+      mergedData = mergedData.filter(record => {
+        // Try multiple date fields
+        const dateStr = record.parsedOrderDate || record.orderDate || record.createdAt;
+        if (!dateStr) return true; // Keep if no date
+        
+        const recordDate = new Date(dateStr);
+        return recordDate >= start && recordDate <= end;
+      });
+      
+      console.log(`📅 Date filter applied: ${beforeFilter} → ${mergedData.length} records`);
+    }
     
     console.log(`✅ Comprehensive Shiprocket data fetched: ${mergedData.length} records`);
     console.log(`📈 Data breakdown:`);
     console.log(`   - Orders API: ${ordersData.orders?.length || 0} records`);
     console.log(`   - Shipments API: ${shipmentsData.shipments?.length || 0} records`);
-    console.log(`   - Merged records: ${mergedData.length}`);
+    console.log(`   - After date filter: ${mergedData.length}`);
     
     // Debug: Show sample of fetched data
     if (mergedData.length > 0) {
@@ -123,6 +142,7 @@ async function fetchOrdersDirectly(token, options = {}) {
         status: sample.status,
         statusCode: sample.statusCode,
         shippingCharges: sample.shippingCharges,
+        orderDate: sample.orderDate,
         source: sample.source
       });
     }
@@ -436,12 +456,12 @@ function mergeOrdersAndShipments(ordersData, shipmentsData) {
       };
     }
     
-    // If no matching shipment, estimate shipping cost
+    // If no matching shipment, return order without estimated shipping
     return {
       ...order,
-      shippingCharges: order.shippingCharges || 70, // Default estimate
-      totalCharges: order.totalCharges || 70,
-      freightCharges: 70,
+      shippingCharges: order.shippingCharges || 0, // No estimate - actual data only
+      totalCharges: order.totalCharges || 0,
+      freightCharges: 0,
       source: 'orders_api_only'
     };
   });

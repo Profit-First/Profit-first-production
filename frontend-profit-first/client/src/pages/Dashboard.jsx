@@ -148,6 +148,8 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingShiprocket, setIsLoadingShiprocket] = useState(true);
   const [error, setError] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null);
 
   const [dateRange, setDateRange] = useState(() => {
     // Set to last 30 days by default
@@ -159,6 +161,51 @@ const Dashboard = () => {
   const [showDateSelector, setShowDateSelector] = useState(false);
   const [productView, setProductView] = useState("best");
   const [activeIndex, setActiveIndex] = useState(null);
+
+  // Manual Shopify sync function
+  const handleSyncShopify = async () => {
+    try {
+      setIsSyncing(true);
+      setSyncStatus({ status: 'starting', message: 'Starting sync...' });
+      
+      const response = await axiosInstance.post('/data/sync-shopify');
+      
+      if (response.data.success) {
+        setSyncStatus(response.data.status);
+        
+        // Poll for sync status every 10 seconds
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await axiosInstance.get('/data/sync-status');
+            const status = statusResponse.data.syncStatus;
+            setSyncStatus(status);
+            
+            if (status.status === 'completed' || status.status === 'error') {
+              clearInterval(pollInterval);
+              setIsSyncing(false);
+              
+              if (status.status === 'completed') {
+                // Refresh dashboard data
+                window.location.reload();
+              }
+            }
+          } catch (err) {
+            console.error('Error polling sync status:', err);
+          }
+        }, 10000);
+        
+        // Stop polling after 10 minutes max
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          setIsSyncing(false);
+        }, 600000);
+      }
+    } catch (err) {
+      console.error('Sync error:', err);
+      setSyncStatus({ status: 'error', message: err.response?.data?.message || 'Sync failed' });
+      setIsSyncing(false);
+    }
+  };
 
   // Fetch effect
   useEffect(() => {
@@ -380,24 +427,72 @@ const Dashboard = () => {
               {syncStatus.message || 'We are fetching your Shopify data. This may take several minutes.'}
             </p>
             
-            {syncStatus.ordersCount > 0 && (
+            {syncStatus.processedOrders > 0 && (
               <div className="bg-[#0D1D1E] p-4 rounded-lg mb-4">
                 <div className="text-sm text-gray-300 mb-2">Progress:</div>
                 <div className="text-lg font-semibold text-green-400">
-                  {syncStatus.ordersCount} orders fetched
+                  {syncStatus.processedOrders} / {syncStatus.totalOrders || '?'} orders
                 </div>
-                {syncStatus.page && (
+                {syncStatus.currentPage && (
                   <div className="text-sm text-gray-400">
-                    Page {syncStatus.page}
+                    Page {syncStatus.currentPage}
                   </div>
                 )}
               </div>
             )}
             
             <div className="text-xs text-gray-500 mt-4">
-              <p>• We fetch data with 2-minute delays to respect Shopify's rate limits</p>
-              <p>• This ensures reliable data import without interruptions</p>
+              <p>• Syncing in progress...</p>
               <p>• You can safely close this page - sync will continue in background</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // Show "Needs Sync" screen if no orders found
+  if (dashboardData?.needsSync) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D1D1E] text-white">
+        <div className="bg-[#161616] p-8 rounded-lg shadow-lg max-w-md w-full mx-4">
+          <div className="text-center">
+            <div className="text-6xl mb-4">📦</div>
+            <h2 className="text-xl font-semibold mb-2">No Orders Found</h2>
+            <p className="text-gray-400 mb-6">
+              {dashboardData.message || 'Click the button below to sync your Shopify orders.'}
+            </p>
+            
+            <button
+              onClick={handleSyncShopify}
+              disabled={isSyncing}
+              className={`px-6 py-3 rounded-lg text-lg font-medium ${
+                isSyncing 
+                  ? 'bg-gray-600 cursor-not-allowed' 
+                  : 'bg-green-600 hover:bg-green-700'
+              }`}
+            >
+              {isSyncing ? (
+                <span className="flex items-center gap-2">
+                  <PulseLoader size={8} color="#fff" />
+                  Syncing...
+                </span>
+              ) : (
+                '🔄 Sync Shopify Orders (Last 3 Months)'
+              )}
+            </button>
+            
+            {syncStatus && (
+              <div className={`mt-4 text-sm px-3 py-2 rounded ${
+                syncStatus.status === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'
+              }`}>
+                {syncStatus.message || syncStatus.status}
+              </div>
+            )}
+            
+            <div className="text-xs text-gray-500 mt-6">
+              <p>• This will fetch your last 3 months of orders</p>
+              <p>• Sync takes about 30 seconds per 250 orders</p>
             </div>
           </div>
         </div>
@@ -418,6 +513,40 @@ const Dashboard = () => {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Dashboard</h2>
         <div className="flex items-center gap-4 relative">
+          {/* Sync Shopify Orders Button */}
+          <button
+            onClick={handleSyncShopify}
+            disabled={isSyncing}
+            className={`px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 ${
+              isSyncing 
+                ? 'bg-gray-600 cursor-not-allowed' 
+                : 'bg-green-600 hover:bg-green-700'
+            }`}
+          >
+            {isSyncing ? (
+              <>
+                <PulseLoader size={8} color="#fff" />
+                <span>Syncing...</span>
+              </>
+            ) : (
+              <>
+                <span>🔄</span>
+                <span>Sync Shopify Orders</span>
+              </>
+            )}
+          </button>
+          
+          {/* Sync Status Display */}
+          {syncStatus && (
+            <div className={`text-xs px-2 py-1 rounded ${
+              syncStatus.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+              syncStatus.status === 'error' ? 'bg-red-500/20 text-red-400' :
+              'bg-yellow-500/20 text-yellow-400'
+            }`}>
+              {syncStatus.message || syncStatus.status}
+            </div>
+          )}
+          
           <button
             onClick={() => setShowDateSelector(!showDateSelector)}
             className="px-3 py-1 rounded-md text-sm border bg-[#161616] border-gray-700"
@@ -461,7 +590,7 @@ const Dashboard = () => {
             
             // Available metrics (with real data)
             const availableMetrics = shiprocketSummary.filter(card => 
-              ['Revenue', 'Delivered Orders', 'Ad Spend', 'Shipping Cost', 'Business Expenses', 'Net Profit', 'Net Profit Margin', 'ROAS', 'POAS', 'AOV', 'CPP'].includes(card.title) && 
+              ['Revenue', 'Delivered Orders', 'Ad Spend', 'Shipping Charges', 'RTO Charges', 'Business Expenses', 'Net Profit', 'Net Profit Margin', 'ROAS', 'POAS', 'AOV', 'CPP'].includes(card.title) && 
               card.value !== '--'
             );
             

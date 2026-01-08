@@ -116,8 +116,8 @@ async function getDashboardData(req, res) {
     const shopifyBackgroundSync = require('../services/shopify-background-sync.service');
     const syncStatus = await shopifyBackgroundSync.getSyncStatus(userId);
     
-    // If sync is in progress, return sync status instead of incomplete data
-    if (syncStatus && (syncStatus.status === 'in_progress' || syncStatus.status === 'starting')) {
+    // If sync is actively in progress, return sync status
+    if (syncStatus && syncStatus.status === 'in_progress') {
       console.log(`🔄 Sync in progress for user: ${userId}`);
       return res.json({
         syncInProgress: true,
@@ -126,30 +126,34 @@ async function getDashboardData(req, res) {
       });
     }
     
-    // Check if data sync is complete
-    const isDataReady = await shopifyBackgroundSync.isDataSynced(userId);
+    // Check if we have any orders for this user
+    const existingOrders = await getShopifyOrders(userId, '2020-01-01', '2030-12-31'); // Wide date range
     
-    if (!isDataReady) {
-      // Quick check: do we have any orders for this user?
-      const existingOrders = await getShopifyOrders(userId, '2020-01-01', '2030-12-31'); // Wide date range
+    if (existingOrders.length === 0) {
+      // No orders found - user needs to sync
+      console.log(`⚠️  No orders found for user: ${userId} - needs manual sync`);
       
-      if (existingOrders.length === 0) {
-        // No orders found - this is truly a new user needing initial sync
-        console.log(`⚠️  Initial sync required for new user: ${userId}`);
+      // Check if Shopify is connected
+      const shopifyConnection = await getShopifyConnection(userId);
+      
+      if (!shopifyConnection || !shopifyConnection.accessToken) {
+        // No Shopify connection - show empty dashboard
+        console.log(`⚠️  No Shopify connection for user: ${userId}`);
         return res.json({
-          syncInProgress: true,
-          syncStatus: syncStatus || {
-            status: 'pending',
-            message: 'Initial data sync is required. Please wait while we fetch your Shopify data...'
-          },
-          message: 'Initial sync in progress...'
+          noConnection: true,
+          message: 'Please connect your Shopify store first'
         });
-      } else {
-        // User has orders - mark sync as completed to avoid future checks
-        console.log(`✅ Found ${existingOrders.length} existing orders, marking sync as completed for user: ${userId}`);
-        await shopifyBackgroundSync.markConnectionSynced(userId);
       }
+      
+      // Shopify connected but no orders - show "Sync Now" message
+      return res.json({
+        needsSync: true,
+        message: 'No orders found. Click "Sync Shopify Orders" to fetch your data.',
+        syncStatus: syncStatus || { status: 'idle', message: 'Ready to sync' }
+      });
     }
+    
+    console.log(`✅ Found ${existingOrders.length} orders for user: ${userId}`);
 
     // Fetch data from all tables in parallel
     let [
@@ -773,14 +777,12 @@ function calculateShiprocketSummary(orders, products, metaInsights, shiprocketSh
       revenueSource = 'total_amount';
       revenueSourceCounts.total_amount++;
     } else {
-      // Estimate based on average order value (₹1500 default)
-      shipmentRevenue = 1500;
-      revenueSource = 'estimated';
-      revenueSourceCounts.estimated++;
+      // No revenue data available - skip this shipment (no estimates)
+      shipmentRevenue = 0;
+      revenueSource = 'no_data';
       
-      if (index < 5) { // Log first few estimated cases
-        console.log(`⚠️  No revenue field found for shipment ${shipment.shipmentId || shipment.id}, using default ₹1500`);
-        console.log(`   Available fields:`, Object.keys(shipment));
+      if (index < 5) { // Log first few cases with no revenue
+        console.log(`⚠️  No revenue field found for shipment ${shipment.shipmentId || shipment.id}`);
       }
     }
     
@@ -792,14 +794,14 @@ function calculateShiprocketSummary(orders, products, metaInsights, shiprocketSh
     }
   });
 
-  // Calculate COGS - Use ONLY Shiprocket data (estimate as 40% of revenue)
-  shiprocketCogs = shiprocketRevenue * 0.4;
+  // COGS - Not available from Shiprocket (requires product cost data)
+  shiprocketCogs = 0; // No estimates
 
   console.log(`💰 Revenue calculation complete (SHIPROCKET ONLY):`);
   console.log(`   Total Revenue: ₹${shiprocketRevenue}`);
   console.log(`   Revenue Sources:`, revenueSourceCounts);
   console.log(`   Average per shipment: ₹${deliveredOrderCount > 0 ? (shiprocketRevenue / deliveredOrderCount).toFixed(0) : 0}`);
-  console.log(`   Total COGS: ₹${shiprocketCogs} (40% of revenue)`);
+  console.log(`   Total COGS: ₹${shiprocketCogs} (actual data only)`);
   
   // If still no revenue, there might be a data structure issue
   if (shiprocketRevenue === 0 && deliveredShipments.length > 0) {
@@ -830,9 +832,9 @@ function calculateShiprocketSummary(orders, products, metaInsights, shiprocketSh
     return sum + cost;
   }, 0);
   
-  if (shippingCost === 0 && deliveredOrderCount > 0) {
-    shippingCost = deliveredOrderCount * 70; // Estimate ₹70 per order
-    console.log(`⚠️  No shipping cost data found, estimating: ${deliveredOrderCount} orders × ₹70 = ₹${shippingCost}`);
+  // No estimates - use actual shipping cost only
+  if (shippingCost === 0) {
+    console.log(`⚠️  No shipping cost data found from Shiprocket API`);
   }
 
   // Business Expenses (based on Shiprocket revenue)
@@ -940,7 +942,7 @@ function calculateShiprocketPerformanceData(shiprocketShipments, startDate, endD
     } else if (shipment.total_amount && shipment.total_amount > 0) {
       revenue = parseFloat(shipment.total_amount);
     } else {
-      revenue = 1500; // Default estimate
+      revenue = 0; // No estimate - actual data only
     }
     
     // Try different shipping cost field names
@@ -954,7 +956,7 @@ function calculateShiprocketPerformanceData(shiprocketShipments, startDate, endD
     } else if (shipment.shipping_charges && shipment.shipping_charges > 0) {
       shippingCost = parseFloat(shipment.shipping_charges);
     } else {
-      shippingCost = 70; // Default estimate
+      shippingCost = 0; // No estimate - actual data only
     }
     
     const existing = deliveredByDate.get(date);
@@ -976,7 +978,7 @@ function calculateShiprocketPerformanceData(shiprocketShipments, startDate, endD
 
   // If no delivered shipments, create sample data from all shipments
   if (deliveredByDate.size === 0 && shiprocketShipments.length > 0) {
-    console.log(`⚠️  No delivered shipments found, creating estimated performance data from all shipments`);
+    console.log(`⚠️  No delivered shipments found, showing all shipments data (actual values only)`);
     
     // Group all shipments by date for visualization
     const allShipmentsByDate = new Map();
@@ -985,9 +987,9 @@ function calculateShiprocketPerformanceData(shiprocketShipments, startDate, endD
       const date = shipment.parsedOrderDate || shipment.createdAt?.split('T')[0];
       if (!date) return;
       
-      // Estimate revenue (use average of 1500 per order if no revenue data)
-      const revenue = parseFloat(shipment.total || shipment.orderValue || shipment.codCharges || 1500);
-      const shippingCost = parseFloat(shipment.totalCharges || 70); // Estimate ₹70 shipping
+      // Use actual revenue only (no estimates)
+      const revenue = parseFloat(shipment.total || shipment.orderValue || shipment.codCharges || 0);
+      const shippingCost = parseFloat(shipment.totalCharges || shipment.shippingCharges || 0);
       
       const existing = allShipmentsByDate.get(date);
       if (existing) {
@@ -1018,7 +1020,7 @@ function calculateShiprocketPerformanceData(shiprocketShipments, startDate, endD
         orders: item.orders
       }));
 
-    console.log(`📦 Shiprocket Performance data (estimated): ${data.length} data points from all shipments`);
+    console.log(`📦 Shiprocket Performance data: ${data.length} data points from all shipments`);
     return data;
   }
 
@@ -1093,24 +1095,24 @@ function calculateShiprocketFinancialBreakdown(orders, products, metaInsights, s
     } else if (shipment.total_amount && shipment.total_amount > 0) {
       shipmentRevenue = parseFloat(shipment.total_amount);
     } else {
-      shipmentRevenue = 1500; // Default estimate
+      shipmentRevenue = 0; // No estimate - actual data only
     }
     
     if (shipmentRevenue > 0) {
       shiprocketRevenue += shipmentRevenue;
-      // Calculate COGS as 40% of revenue (no Shopify dependency)
-      shiprocketCogs += shipmentRevenue * 0.4;
     }
   });
 
-  // If no delivered shipments, use all shipments with estimates
+  // COGS not available from Shiprocket - requires product cost data
+  shiprocketCogs = 0;
+
+  // If no delivered shipments, use all shipments (actual data only)
   if (deliveredShipments.length === 0 && shiprocketShipments.length > 0) {
-    console.log(`⚠️  No delivered shipments, using all shipments for financial breakdown`);
+    console.log(`⚠️  No delivered shipments, using all shipments for financial breakdown (actual data only)`);
     
     shiprocketShipments.forEach(shipment => {
-      const shipmentRevenue = parseFloat(shipment.total || shipment.orderValue || shipment.codCharges || 1500); // Default ₹1500
+      const shipmentRevenue = parseFloat(shipment.total || shipment.orderValue || shipment.codCharges || 0);
       shiprocketRevenue += shipmentRevenue;
-      shiprocketCogs += shipmentRevenue * 0.4; // 40% estimate
     });
   }
 
@@ -1137,8 +1139,9 @@ function calculateShiprocketFinancialBreakdown(orders, products, metaInsights, s
     return sum + cost;
   }, 0);
   
-  if (shippingCost === 0 && shiprocketShipments.length > 0) {
-    shippingCost = shiprocketShipments.length * 70; // Estimate ₹70 per shipment
+  // No estimates - use actual shipping cost only
+  if (shippingCost === 0) {
+    console.log(`⚠️  No shipping cost data found from Shiprocket`);
   }
 
   // Business expenses
@@ -1186,19 +1189,13 @@ function calculateShiprocketFinancialBreakdown(orders, products, metaInsights, s
   
   const pieData = allItems.filter(item => item.value > 0);
 
-  // Ensure we always have some data for visualization
+  // If no cost data, return empty (no estimates)
   if (pieData.length === 0) {
-    console.log(`⚠️  No cost data, creating estimated breakdown`);
-    const estimatedData = [
-      { name: 'Product Cost (COGS)', value: shiprocketRevenue * 0.4, color: '#0d2923' },
-      { name: 'Shipping Cost', value: shiprocketRevenue * 0.1, color: '#1a4037' },
-      { name: 'Business Expenses', value: shiprocketRevenue * 0.1, color: '#40916c' },
-    ];
-    
+    console.log(`⚠️  No cost data available - showing empty breakdown`);
     return {
       revenue: shiprocketRevenue,
-      pieData: estimatedData,
-      list: estimatedData
+      pieData: [],
+      list: []
     };
   }
 
@@ -1277,8 +1274,13 @@ function calculateSummary(orders, products, metaInsights, shiprocketShipments, o
   const adSpend = metaInsights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
   console.log(`📊 Ad Spend Calculation: ${metaInsights.length} insights, Total: ₹${adSpend}`);
 
-  // Shipping Cost (S) = Estimate based on Shopify orders (₹70 per order average)
-  const shippingCost = totalOrders * 70;
+  // Shipping Cost - Get actual from Shiprocket shipments (no estimates)
+  let shippingCost = 0;
+  if (shiprocketShipments && shiprocketShipments.length > 0) {
+    shippingCost = shiprocketShipments.reduce((sum, s) => {
+      return sum + parseFloat(s.totalCharges || s.shippingCharges || s.freight_charges || 0);
+    }, 0);
+  }
 
   // Calculate Business Expenses (monthly expenses converted to period-based)
   const daysInPeriod = Math.ceil((new Date() - new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) / (1000 * 60 * 60 * 24));
@@ -1328,8 +1330,8 @@ function calculateSummary(orders, products, metaInsights, shiprocketShipments, o
     
     // Cost Breakdown
     { title: 'COGS', value: `₹${cogs.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Cost of Goods Sold for Shopify orders' },
-    { title: 'Ad Spend', value: `₹${adSpend.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Total marketing spend' },
-    { title: 'Shipping Cost', value: `₹${shippingCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Estimated logistics expense (₹70 per order)' },
+    { title: 'Ad Spend', value: `₹${adSpend.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Total marketing spend from Meta' },
+    { title: 'Shipping Cost', value: shippingCost > 0 ? `₹${shippingCost.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '--', formula: 'Actual shipping cost from Shiprocket' },
     { title: 'Business Expenses', value: `₹${totalBusinessExpenses.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, formula: 'Agency fees + RTO + Gateway + Staff + Rent + Other' },
     
     // Profit Metrics
@@ -1378,8 +1380,16 @@ function calculatePerformanceData(orders, startDate, endDate, businessExpenses) 
     // Calculate business expenses for this order (daily portion)
     const dailyBusinessExpenses = calculateDailyBusinessExpenses(revenue, businessExpenses);
     
-    // Estimate costs (COGS ~40%, Marketing ~15%, Shipping ~10%, Business Expenses, Other ~5%)
-    const totalCosts = revenue * 0.70 + dailyBusinessExpenses;
+    // Calculate actual costs from available data (no estimates)
+    // Get COGS from product costs if available
+    let orderCogs = 0;
+    (order.lineItems || []).forEach(item => {
+      const productId = item.product_id?.toString();
+      // COGS would need to come from onboarding data - for now use 0
+      orderCogs += 0;
+    });
+    
+    const totalCosts = orderCogs + dailyBusinessExpenses;
     const netProfit = revenue - totalCosts;
     
     if (existing) {
@@ -1468,8 +1478,13 @@ function calculateFinancialBreakdown(orders, products, metaInsights, shiprocketS
   const adSpend = metaInsights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
   console.log(`📊 Financial Breakdown - Ad Spend: ${metaInsights.length} insights, Total: ₹${adSpend}`);
   
-  // Shipping Cost (S) = Estimate based on Shopify orders (₹70 per order average)
-  const shippingCost = orderCount * 70;
+  // Shipping Cost - Get actual from Shiprocket (no estimates)
+  let shippingCost = 0;
+  if (shiprocketShipments && shiprocketShipments.length > 0) {
+    shippingCost = shiprocketShipments.reduce((sum, s) => {
+      return sum + parseFloat(s.totalCharges || s.shippingCharges || s.freight_charges || 0);
+    }, 0);
+  }
   
   // Calculate Business Expenses (based on Shopify revenue)
   const daysInPeriod = Math.ceil((new Date() - new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) / (1000 * 60 * 60 * 24));
@@ -1712,8 +1727,13 @@ function calculateWebsiteMetrics(orders, customers, metaInsights, shiprocketShip
   
   const adSpend = metaInsights.reduce((sum, insight) => sum + (insight.adSpend || 0), 0);
   
-  // Shipping Cost - Estimate based on Shopify orders (₹70 per order average)
-  const shippingCost = validOrders.length * 70;
+  // Shipping Cost - Get actual from Shiprocket (no estimates)
+  let shippingCost = 0;
+  if (shiprocketShipments && shiprocketShipments.length > 0) {
+    shippingCost = shiprocketShipments.reduce((sum, s) => {
+      return sum + parseFloat(s.totalCharges || s.shippingCharges || s.freight_charges || 0);
+    }, 0);
+  }
   
   // Calculate Business Expenses
   const daysInPeriod = Math.ceil((new Date() - new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) / (1000 * 60 * 60 * 24));
@@ -1803,102 +1823,74 @@ function calculateShippingMetrics(shiprocketShipments, orders) {
   if (shiprocketShipments && shiprocketShipments.length > 0) {
     console.log(`📊 Calculating shipping metrics from ${shiprocketShipments.length} Shiprocket shipments`);
     
-    // Log first shipment for debugging
-    if (shiprocketShipments[0]) {
-      console.log(`   Sample shipment:`, {
-        status: shiprocketShipments[0].status,
-        statusCode: shiprocketShipments[0].statusCode,
-        totalCharges: shiprocketShipments[0].totalCharges
-      });
-    }
+    // Log all unique statuses for debugging
+    const allStatuses = {};
+    shiprocketShipments.forEach(s => {
+      const status = (s.shipmentStatus || s.status || 'NO_STATUS').toUpperCase().trim();
+      const code = s.statusCode;
+      const key = `${status} (${code})`;
+      allStatuses[key] = (allStatuses[key] || 0) + 1;
+    });
+    console.log(`   All statuses:`, allStatuses);
     
-    // Count by status - Updated logic to match actual Shiprocket statuses
-    // Based on common Shiprocket status codes and names
+    // Get status - prefer shipmentStatus from Shipments API
+    const getStatus = (s) => (s.shipmentStatus || s.status || '').toUpperCase().trim();
+    const getStatusCode = (s) => parseInt(s.statusCode) || 0;
+    
+    // Delivered = status "DELIVERED" or status code 6, 7, 8 (exclude RTO)
     const delivered = shiprocketShipments.filter(s => {
-      const status = (s.status || '').toLowerCase();
-      const code = s.statusCode ? parseInt(s.statusCode) : null;
-      
-      // Comprehensive delivered status matching - but exclude RTO delivered
-      return (status === 'delivered' || 
-              status === 'delivered successfully' ||
-              status === 'delivery completed' ||
-              status === 'delivered to buyer' ||
-              status === 'shipment delivered' ||
-              status === 'delivered to customer' ||
-              (status.includes('delivered') && !status.includes('rto')) ||
-              code === 6 || // Standard delivered code
-              code === 7 || // Alternative delivered code
-              code === 8) && // Sometimes delivered is code 8
-             !status.includes('rto') && // Exclude RTO delivered
-             !status.includes('return'); // Exclude return delivered
+      const status = getStatus(s);
+      const code = getStatusCode(s);
+      // Same logic as shiprocket-dashboard.controller.js
+      return (status === 'DELIVERED' || code === 6 || code === 7 || code === 8) &&
+             !status.includes('RTO');
     }).length;
     
+    // In Transit = status contains "TRANSIT", "SHIPPED", "OUT FOR" or code 4, 5
     const inTransit = shiprocketShipments.filter(s => {
-      const status = (s.status || '').toLowerCase();
-      const code = s.statusCode ? parseInt(s.statusCode) : null;
-      
-      return (status.includes('transit') || 
-              status.includes('shipped') || 
-              status.includes('out for delivery') ||
-              status.includes('in transit') ||
-              status === 'shipped' ||
-              status === 'out for delivery' ||
-              code === 3 || // In transit
-              code === 4 || // Out for delivery
-              code === 5) && // Shipped
-             !status.includes('delivered') && 
-             !status.includes('rto') &&
-             !status.includes('return');
+      const status = getStatus(s);
+      const code = getStatusCode(s);
+      return (status === 'IN TRANSIT' || status === 'OUT FOR DELIVERY' || 
+              status === 'SHIPPED' || status === 'PICKED UP' ||
+              status.includes('TRANSIT') || status.includes('OUT FOR') ||
+              code === 4 || code === 5) &&
+             !status.includes('DELIVERED') && !status.includes('RTO');
     }).length;
     
+    // RTO = status contains "RTO" or code 9
     const rto = shiprocketShipments.filter(s => {
-      const status = (s.status || '').toLowerCase();
-      const code = s.statusCode ? parseInt(s.statusCode) : null;
-      
-      return status.includes('rto') || 
-             status.includes('return to origin') ||
-             (status.includes('return') && !status.includes('non')) ||
-             status === 'rto' ||
-             code === 9 || // RTO delivered
-             code === 10;  // RTO in transit
+      const status = getStatus(s);
+      const code = getStatusCode(s);
+      return status.includes('RTO') || code === 9;
     }).length;
     
+    // NDR = status contains "NDR" or "UNDELIVERED"
     const ndrPending = shiprocketShipments.filter(s => {
-      const status = (s.status || '').toLowerCase();
-      const code = s.statusCode ? parseInt(s.statusCode) : null;
-      
-      return status.includes('ndr') || 
-             status.includes('non delivery') ||
-             status.includes('non-delivery') ||
-             status === 'ndr pending' ||
-             code === 17 || // NDR pending
-             code === 18;   // NDR
+      const status = getStatus(s);
+      return status === 'NDR' || status === 'UNDELIVERED' || status.includes('NDR');
     }).length;
     
+    // Pickup Pending = status "NEW", "READY TO SHIP", "PICKUP" or code 1, 2, 3
     const pickupPending = shiprocketShipments.filter(s => {
-      const status = (s.status || '').toLowerCase();
-      const code = s.statusCode ? parseInt(s.statusCode) : null;
-      
-      return (status.includes('pickup') && status.includes('pending')) ||
-             status === 'pickup pending' ||
-             status === 'awaiting pickup' ||
-             (status === 'pending' && !status.includes('ndr')) ||
-             code === 1 || // Pickup pending
-             code === 2;   // Pickup scheduled
+      const status = getStatus(s);
+      const code = getStatusCode(s);
+      return status === 'NEW' || status === 'READY TO SHIP' || 
+             status === 'PICKUP SCHEDULED' || status === 'AWB ASSIGNED' ||
+             status.includes('PICKUP') || status.includes('READY') ||
+             code === 1 || code === 2 || code === 3;
     }).length;
     
-    // Calculate total shipping cost
+    // Calculate total shipping cost (actual data only - no estimates)
     let totalShippingCost = shiprocketShipments.reduce((sum, s) => 
-      sum + (parseFloat(s.totalCharges) || 0), 0
+      sum + (parseFloat(s.totalCharges || s.shippingCharges || s.freightCharges || s.freight_charges) || 0), 0
     );
     
-    // If no cost data, estimate based on shipment count
-    if (totalShippingCost === 0 && shiprocketShipments.length > 0) {
-      const avgShippingPerShipment = 70; // Average shipping cost in India
-      totalShippingCost = shiprocketShipments.length * avgShippingPerShipment;
+    // No estimates - use actual data only
+    if (totalShippingCost === 0) {
+      console.log(`⚠️  No shipping cost data available from Shiprocket`);
     }
     
-    const avgShippingCost = shiprocketShipments.length > 0 
+    const avgShippingCost = shiprocketShipments.length > 0 && totalShippingCost > 0
       ? totalShippingCost / shiprocketShipments.length 
       : 0;
 
@@ -1907,9 +1899,13 @@ function calculateShippingMetrics(shiprocketShipments, orders) {
     const deliveryRate = totalShipments > 0 ? (delivered / totalShipments) * 100 : 0;
     const rtoRate = totalShipments > 0 ? (rto / totalShipments) * 100 : 0;
     
-    // Count prepaid vs COD from orders
-    const prepaidOrders = orders.filter(o => o.financialStatus === 'paid').length;
-    const codOrders = orders.length - prepaidOrders;
+    // Count prepaid vs COD from Shiprocket data (not Shopify)
+    const prepaidOrders = shiprocketShipments.filter(s => 
+      (s.paymentMethod || '').toLowerCase() === 'prepaid'
+    ).length;
+    const codOrders = shiprocketShipments.filter(s => 
+      (s.paymentMethod || '').toLowerCase() === 'cod'
+    ).length;
 
     console.log(`   Shipping breakdown:`, {
       totalShipments, delivered, inTransit, rto, ndrPending, pickupPending,
@@ -2172,7 +2168,68 @@ async function getSyncStatus(req, res) {
   }
 }
 
+/**
+ * Manual Shopify Sync - Sync last 3 months of orders
+ * @route POST /api/data/sync-shopify
+ * @access Protected
+ */
+async function syncShopifyOrders(req, res) {
+  try {
+    const userId = req.user.userId;
+    
+    console.log(`\n🔄 Manual Shopify sync requested for user: ${userId}`);
+    
+    // Get Shopify connection
+    const shopifyConnection = await getShopifyConnection(userId);
+    
+    if (!shopifyConnection || !shopifyConnection.accessToken) {
+      return res.status(404).json({
+        success: false,
+        error: 'No Shopify connection found',
+        message: 'Please connect your Shopify store first'
+      });
+    }
+    
+    const { shopUrl, accessToken } = shopifyConnection;
+    console.log(`   Shop: ${shopUrl}`);
+    
+    // Check if sync is already in progress
+    const shopifyBackgroundSync = require('../services/shopify-background-sync.service');
+    const currentStatus = await shopifyBackgroundSync.getSyncStatus(userId);
+    
+    if (currentStatus && currentStatus.status === 'in_progress') {
+      return res.json({
+        success: true,
+        message: 'Sync already in progress',
+        status: currentStatus
+      });
+    }
+    
+    // Start background sync (last 3 months)
+    await shopifyBackgroundSync.startBackgroundSync(userId, shopUrl, accessToken);
+    
+    res.json({
+      success: true,
+      message: 'Shopify sync started (last 3 months)',
+      status: {
+        status: 'starting',
+        stage: 'initializing',
+        message: 'Starting Shopify sync...'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Manual Shopify sync error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to start sync',
+      message: error.message
+    });
+  }
+}
+
 module.exports = {
   getDashboardData,
-  getSyncStatus
+  getSyncStatus,
+  syncShopifyOrders
 };

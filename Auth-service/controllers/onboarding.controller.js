@@ -247,7 +247,7 @@ class OnboardingController {
       // Fetch orders (last 3 months)
       console.log(`📦 Fetching orders from last 3 months...`);
       const ordersResponse = await axios.get(
-        `https://${shopUrl}/admin/api/2025-10/orders.json`,
+        `https://${shopUrl}/admin/api/2024-10/orders.json`,
         {
           headers: { 'X-Shopify-Access-Token': accessToken },
           params: { 
@@ -261,7 +261,7 @@ class OnboardingController {
       // Fetch customers (last 3 months)
       console.log(`👥 Fetching customers from last 3 months...`);
       const customersResponse = await axios.get(
-        `https://${shopUrl}/admin/api/2025-10/customers.json`,
+        `https://${shopUrl}/admin/api/2024-10/customers.json`,
         {
           headers: { 'X-Shopify-Access-Token': accessToken },
           params: { 

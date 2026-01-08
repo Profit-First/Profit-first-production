@@ -10,8 +10,8 @@ import Step4 from "../components/Step4";
 import Step5 from "../components/Step5";
 
 const Onboarding = () => {
-  const [loading, setLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState(1);
+  const [loading, setLoading] = useState(true);  // Start with loading = true to prevent flash
+  const [currentStep, setCurrentStep] = useState(null);  // Start with null until we know the actual step
   const [transitioning, setTransitioning] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -33,10 +33,7 @@ const Onboarding = () => {
     }
 
     console.log('🔄 Fetching onboarding step...');
-    setLoading(true);
-    
-    // Show loading toast
-    const loadingToast = toast.loading("Loading your onboarding progress...");
+    // loading is already true by default
     
     axiosInstance
       .get("/onboard/step")
@@ -45,33 +42,16 @@ const Onboarding = () => {
         const step = response.data.step;
         const isCompleted = response.data.isCompleted;
         
-        toast.dismiss(loadingToast);
-        
         if (step === 6 || isCompleted) {
           console.log('🎉 Onboarding complete, redirecting to dashboard');
-          toast.success("🎉 Welcome back! Redirecting to dashboard...", { autoClose: 2000 });
-          setTimeout(() => navigate("/dashboard", { replace: true }), 1000);
+          navigate("/dashboard", { replace: true });
         } else {
           console.log('📍 Setting current step to:', step);
           setCurrentStep(step);
-          
-          // Welcome message based on step
-          const stepMessages = {
-            1: "👋 Welcome! Let's get started with your business details",
-            2: "📊 Great! Now let's set up your financial goals",
-            3: "🛍️ Time to connect your Shopify store",
-            4: "📈 Almost there! Let's configure your analytics",
-            5: "🚚 Final step! Connect your shipping platform"
-          };
-          
-          if (step > 1) {
-            toast.info(stepMessages[step] || `Continuing from Step ${step}`, { autoClose: 3000 });
-          }
         }
       })
       .catch((error) => {
         console.error("❌ Error fetching onboarding step:", error);
-        toast.dismiss(loadingToast);
         
         // Handle specific errors
         if (error.response?.status === 401) {
@@ -81,11 +61,9 @@ const Onboarding = () => {
           setTimeout(() => navigate("/login", { replace: true }), 1500);
         } else if (error.response?.status === 404) {
           console.log('📝 User not found in onboarding, starting from step 1');
-          toast.info("👋 Welcome! Let's set up your account", { autoClose: 3000 });
           setCurrentStep(1);
         } else {
           console.error('⚠️ Unknown error, starting from step 1');
-          toast.warning("Starting fresh onboarding process", { autoClose: 3000 });
           setCurrentStep(1);
         }
       })
@@ -140,7 +118,7 @@ const Onboarding = () => {
     }
   };
 
-  if (loading) { 
+  if (loading || currentStep === null) { 
     return (
       <div className="flex items-center justify-center h-screen bg-[#0D1D1E]">
         <PulseLoader size={60} color="#12EB8E" />
@@ -192,6 +170,7 @@ const Onboarding = () => {
       </div>
     </div>
   );
+
 };
 
 export default Onboarding;

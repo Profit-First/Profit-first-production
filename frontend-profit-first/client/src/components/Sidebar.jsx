@@ -236,9 +236,15 @@ const Sidebar = () => {
                 <p className="text-gray-400 text-sm mb-3">
                   Run your own affiliate program and earn up to 100$ a month.
                 </p>
-                <button className="text-green-400 text-sm font-medium hover:text-green-300 flex items-center gap-1">
-                  Try it out →
-                </button>
+               <a
+  href="https://profitfirst-affiliate.vercel.app/"
+  target="_blank"
+  rel="noopener noreferrer"
+  className="text-green-400 text-sm font-medium hover:text-green-300 flex items-center gap-1"
+>
+  Try it out →
+</a>
+
               </div>
             )}
           </div>

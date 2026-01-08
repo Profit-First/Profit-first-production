@@ -18,10 +18,10 @@ const CONNECTIONS_TABLE = process.env.SHOPIFY_CONNECTIONS_TABLE || 'shopify_conn
 const SYNC_STATUS_TABLE = process.env.SYNC_STATUS_TABLE || 'sync_status';
 
 // Shopify API version
-const SHOPIFY_API_VERSION = '2025-10';
+const SHOPIFY_API_VERSION = '2024-10';
 
-// Rate limiting: 2 calls per minute max
-const RATE_LIMIT_DELAY = 120000; // 2 minutes in milliseconds
+// Rate limiting: Only delay if we need multiple pages
+const RATE_LIMIT_DELAY = 30000; // 30 seconds (reduced from 2 minutes for faster sync)
 
 class ShopifyBackgroundSyncService {
   constructor() {
