@@ -79,8 +79,12 @@ const ChatbotPage = () => {
       // Get auth token
       const token = localStorage.getItem('token');
       
+      // Use same logic as axios.js - detect production vs development
+      const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const API_BASE_URL = isDev ? 'http://localhost:3000/api' : '/api';
+      
       // Use fetch with streaming
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/ai/chat`, {
+      const response = await fetch(`${API_BASE_URL}/ai/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
